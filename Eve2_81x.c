@@ -2,18 +2,15 @@
 //
 // This "library" consists of the files "Eve2_81x.c" and "Eve2_81x.h".
 //
-// The library is meant to be "uncomplicated".  In persuit of this goal I am unable to
-// make function prototypes that match FTDI example code - in part because it is also not 
-// consistent.  The functions themselves are a good analog of the function descriptions from 
-// FTDI documentation, but here they must be uncomplicated by Windows, bridges, ancient 
-// versions of Arduino and other temptations to uniqueness.  I draw the line between the Eve 
-// and all other hardware. The library is "clean" and includes no abstraction at all, unlike 
-// much of the example code on the Internet which is sort of application and abstraction 
-// mixed together in a confusing abuse of my eye-holes.  My intent is to be as straight forward 
-// and understandable as possible, so while function names and parameter lists are different 
-// than Bridgetech code examples, they should be easily recognizable.  I have also made every 
-// attempt to reference Bridgetech documentation against the code to act as a translation to 
-// help in understanding.
+// In persuit of the common goal of simplicity and understandability I find that I am unable to
+// make function prototypes that match Bridgetech example code.  I draw the line between the 
+// Eve and all other hardware. The library is "clean" and includes no abstraction at all, unlike 
+// much of the example code on the Internet which is sort of application and abstraction mixed 
+// together in a confusing abuse of my eye-holes.  
+// My intent is to be as straight forward and understandable as possible, so while function 
+// names and parameter lists are different than Bridgetech code examples, they should be easily 
+// recognizable.  I have also made every attempt to reference Bridgetech documentation against 
+// the code to act as a translation to help in understanding.
 
 // Notes on the operation of the Eve command processing engine - THE FIFO
 //
