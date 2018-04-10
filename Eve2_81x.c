@@ -2,15 +2,14 @@
 //
 // This "library" consists of the files "Eve2_81x.c" and "Eve2_81x.h".
 //
-// The library is meant to be "uncomplicated".  In persuit of this goal that I am unable to
+// The library is meant to be "uncomplicated".  In persuit of this goal I am unable to
 // make function prototypes that match FTDI example code - in part because it is also not 
 // consistent.  The functions themselves are a good analog of the function descriptions from 
 // FTDI documentation, but here they must be uncomplicated by Windows, bridges, ancient 
-// versions of Arduino and other temptations to uniqueness.  In this code, I draw the line 
-// between the Eve and all other hardware and do not include function prototypes with, for 
-// instance, a "host" parameter.  This library is "clean" and includes no abstraction at all, 
-// unlike much of the example code on the Internet which is sort of application and abstraction 
-// mixed together in a confusing sloppy mess.  My intent, however, is to be as straight forward 
+// versions of Arduino and other temptations to uniqueness.  I draw the line between the Eve 
+// and all other hardware. The library is "clean" and includes no abstraction at all, unlike 
+// much of the example code on the Internet which is sort of application and abstraction 
+// mixed together in a confusing abuse of my eye-holes.  My intent is to be as straight forward 
 // and understandable as possible, so while function names and parameter lists are different 
 // than Bridgetech code examples, they should be easily recognizable.  I have also made every 
 // attempt to reference Bridgetech documentation against the code to act as a translation to 
@@ -61,7 +60,7 @@ void FT81x_Init(void)
   
   Eve_Reset(); // Hard reset of the Eve chip
 
-	// Wakeup Eve
+  // Wakeup Eve
   HostCommand(HCMD_ACTIVE);
   MyDelay(100);
   
@@ -72,31 +71,31 @@ void FT81x_Init(void)
 //  Log("Eve now ACTIVE\n");
   
   // turn off screen output during startup
-	wr8(REG_GPIOX + RAM_REG, 0);			       // Set REG_GPIOX to 0 to turn off the LCD DISP signal
+  wr8(REG_GPIOX + RAM_REG, 0);             // Set REG_GPIOX to 0 to turn off the LCD DISP signal
   wr8(REG_PCLK + RAM_REG, 0);              // Pixel Clock Output disable
 
   // load parameters of the physical screen to the Eve
   // All of these registers are 32 bits, but most bits are reserved, so only write what is actually used
-	wr16(REG_HCYCLE + RAM_REG, HCYCLE);         // Set H_Cycle to 548
-	wr16(REG_HOFFSET + RAM_REG, HOFFSET);       // Set H_Offset to 43
-	wr16(REG_HSYNC0 + RAM_REG, HSYNC0);         // Set H_SYNC_0 to 0
-	wr16(REG_HSYNC1 + RAM_REG, HSYNC1);         // Set H_SYNC_1 to 41
-	wr16(REG_VCYCLE + RAM_REG, VCYCLE);         // Set V_Cycle to 292
-	wr16(REG_VOFFSET + RAM_REG, VOFFSET);       // Set V_OFFSET to 12
-	wr16(REG_VSYNC0 + RAM_REG, VSYNC0);         // Set V_SYNC_0 to 0
-	wr16(REG_VSYNC1 + RAM_REG, VSYNC1);         // Set V_SYNC_1 to 10
-	wr8(REG_SWIZZLE + RAM_REG, SWIZZLE);        // Set SWIZZLE to 0
-	wr8(REG_PCLK_POL + RAM_REG, PCLK_POL);      // Set PCLK_POL to 1
+  wr16(REG_HCYCLE + RAM_REG, HCYCLE);         // Set H_Cycle to 548
+  wr16(REG_HOFFSET + RAM_REG, HOFFSET);       // Set H_Offset to 43
+  wr16(REG_HSYNC0 + RAM_REG, HSYNC0);         // Set H_SYNC_0 to 0
+  wr16(REG_HSYNC1 + RAM_REG, HSYNC1);         // Set H_SYNC_1 to 41
+  wr16(REG_VCYCLE + RAM_REG, VCYCLE);         // Set V_Cycle to 292
+  wr16(REG_VOFFSET + RAM_REG, VOFFSET);       // Set V_OFFSET to 12
+  wr16(REG_VSYNC0 + RAM_REG, VSYNC0);         // Set V_SYNC_0 to 0
+  wr16(REG_VSYNC1 + RAM_REG, VSYNC1);         // Set V_SYNC_1 to 10
+  wr8(REG_SWIZZLE + RAM_REG, SWIZZLE);        // Set SWIZZLE to 0
+  wr8(REG_PCLK_POL + RAM_REG, PCLK_POL);      // Set PCLK_POL to 1
   wr16(REG_HSIZE + RAM_REG, HSIZE);           // Set H_SIZE to 480
-	wr16(REG_VSIZE + RAM_REG, VSIZE);           // Set V_SIZE to 272
+  wr16(REG_VSIZE + RAM_REG, VSIZE);           // Set V_SIZE to 272
   wr8(REG_CSPREAD + RAM_REG, CSPREAD);        // Set CSPREAD to 1    (32 bit register - write only 8 bits)
   wr8(REG_DITHER + RAM_REG, DITHER);          // Set DITHER to 1     (32 bit register - write only 8 bits)
 
-	// configure touch & audio
+  // configure touch & audio
   wr16(REG_TOUCH_RZTHRESH + RAM_REG, 1200);          // set touch resistance threshold
-	wr8(REG_TOUCH_MODE + RAM_REG, 0x02);     	         // set touch on: continous - this is default
-	wr8(REG_TOUCH_ADC_MODE + RAM_REG, 0x01); 	         // set ADC mode: differential - this is default
-	wr8(REG_TOUCH_OVERSAMPLE + RAM_REG, 15);  	       // set touch oversampling to max
+  wr8(REG_TOUCH_MODE + RAM_REG, 0x02);               // set touch on: continous - this is default
+  wr8(REG_TOUCH_ADC_MODE + RAM_REG, 0x01);           // set ADC mode: differential - this is default
+  wr8(REG_TOUCH_OVERSAMPLE + RAM_REG, 15);           // set touch oversampling to max
 
   wr16(REG_GPIOX_DIR + RAM_REG, 0x8000);             // Set Disp GPIO Direction 
   wr16(REG_GPIOX + RAM_REG, 0x8000);                 // Enable Disp (if used)
@@ -271,7 +270,7 @@ uint8_t Cmd_READ_REG_ID(void)
   
   if (readData[0] == 0x7C)           // FT81x Datasheet section 5.1, Table 5-2. Return value always 0x7C
   {
-//  	Log("\nGood ID: 0x%02x\n", readData[0]);
+//    Log("\nGood ID: 0x%02x\n", readData[0]);
     return 1;
   }
   else
@@ -294,11 +293,11 @@ uint8_t Cmd_READ_REG_ID(void)
 // *** Draw Slider - FT81x Series Programmers Guide Section 5.38 *************************************************
 void Cmd_Slider(uint16_t x, uint16_t y, uint16_t w, uint16_t h, uint16_t options, uint16_t val, uint16_t range)
 {
-	Send_CMD(CMD_SLIDER);
-	Send_CMD( ((uint32_t)y << 16) | x );
-	Send_CMD( ((uint32_t)h << 16) | w );
-	Send_CMD( ((uint32_t)val << 16) | options );
-	Send_CMD( (uint32_t)range );
+  Send_CMD(CMD_SLIDER);
+  Send_CMD( ((uint32_t)y << 16) | x );
+  Send_CMD( ((uint32_t)h << 16) | w );
+  Send_CMD( ((uint32_t)val << 16) | options );
+  Send_CMD( (uint32_t)range );
 }
 
 // *** Draw Spinner - FT81x Series Programmers Guide Section 5.54 *************************************************
@@ -351,40 +350,40 @@ void Cmd_Number(uint16_t x, uint16_t y, uint16_t font, uint16_t options, uint32_
 // *** Draw Smooth Color Gradient - FT81x Series Programmers Guide Section 5.34 **********************************
 void Cmd_Gradient(uint16_t x0, uint16_t y0, uint32_t rgb0, uint16_t x1, uint16_t y1, uint32_t rgb1)
 {
-	Send_CMD(CMD_GRADIENT);
-	Send_CMD( ((uint32_t)y0<<16)|x0 );
-	Send_CMD(rgb0);
-	Send_CMD( ((uint32_t)y1<<16)|x1 );
-	Send_CMD(rgb1);
+  Send_CMD(CMD_GRADIENT);
+  Send_CMD( ((uint32_t)y0<<16)|x0 );
+  Send_CMD(rgb0);
+  Send_CMD( ((uint32_t)y1<<16)|x1 );
+  Send_CMD(rgb1);
 }
 
 // *** Draw Button - FT81x Series Programmers Guide Section 5.28 **************************************************
 void Cmd_Button(uint16_t x, uint16_t y, uint16_t w, uint16_t h, uint16_t font, uint16_t options, const char* str)
-{	
-	uint16_t DataPtr, LoopCount, StrPtr;
+{ 
+  uint16_t DataPtr, LoopCount, StrPtr;
   
-	uint16_t length = strlen(str);
-	if(!length) 
+  uint16_t length = strlen(str);
+  if(!length) 
     return;
-	
-	uint32_t* data = (uint32_t*) calloc((length/4)+1, sizeof(uint32_t));
-	
-	StrPtr = 0;
-	for(DataPtr=0; DataPtr<(length/4); DataPtr++, StrPtr += 4)
-		data[DataPtr] = (uint32_t)str[StrPtr+3]<<24 | (uint32_t)str[StrPtr+2]<<16 | (uint32_t)str[StrPtr+1]<<8 | (uint32_t)str[StrPtr];
   
-	for(LoopCount=0; LoopCount<(length%4); LoopCount++, StrPtr++)
-		data[DataPtr] |= (uint32_t)str[StrPtr] << (LoopCount * 8);
-	
-	Send_CMD(CMD_BUTTON);
-	Send_CMD( ((uint32_t)y << 16) | x ); // Put two 16 bit values together into one 32 bit value - do it little endian
-	Send_CMD( ((uint32_t)h << 16) | w );
+  uint32_t* data = (uint32_t*) calloc((length/4)+1, sizeof(uint32_t));
+  
+  StrPtr = 0;
+  for(DataPtr=0; DataPtr<(length/4); DataPtr++, StrPtr += 4)
+    data[DataPtr] = (uint32_t)str[StrPtr+3]<<24 | (uint32_t)str[StrPtr+2]<<16 | (uint32_t)str[StrPtr+1]<<8 | (uint32_t)str[StrPtr];
+  
+  for(LoopCount=0; LoopCount<(length%4); LoopCount++, StrPtr++)
+    data[DataPtr] |= (uint32_t)str[StrPtr] << (LoopCount * 8);
+  
+  Send_CMD(CMD_BUTTON);
+  Send_CMD( ((uint32_t)y << 16) | x ); // Put two 16 bit values together into one 32 bit value - do it little endian
+  Send_CMD( ((uint32_t)h << 16) | w );
   Send_CMD( ((uint32_t)options << 16) | font );
   
-	for(LoopCount=0; LoopCount <= length/4; LoopCount++)
-		Send_CMD(data[LoopCount]);
+  for(LoopCount=0; LoopCount <= length/4; LoopCount++)
+    Send_CMD(data[LoopCount]);
 
-	free(data);
+  free(data);
 }
 
 // *** Draw Text - FT81x Series Programmers Guide Section 5.41 ***************************************************
@@ -507,8 +506,8 @@ uint16_t CoProFIFO_FreeSpace(void)
   cmdBufferWr = rd16(REG_CMD_WRITE + RAM_REG);
     
   cmdBufferDiff = (cmdBufferWr-cmdBufferRd) % FT_CMD_FIFO_SIZE; // FT81x Programmers Guide 5.1.1
-	retval = (FT_CMD_FIFO_SIZE - 4) - cmdBufferDiff;
-	return (retval);
+  retval = (FT_CMD_FIFO_SIZE - 4) - cmdBufferDiff;
+  return (retval);
 }
 
 // Sit and wait until there are the specified number of bytes free in the <GPU/CoProcessor> incoming FIFO
@@ -549,7 +548,7 @@ void CoProWrCmdBuf(const uint8_t *buff, uint32_t count)
   uint32_t TransferSize = 0;
   int32_t Remaining = count; // signed
 
-	do {                
+  do {                
     // Here is the situation:  You have up to about a megabyte of data to transfer into the FIFO
     // Your buffer is LogBuf - limited to 64 bytes (or some other value, but always limited).
     // You need to go around in loops taking 64 bytes at a time until all the data is gone.
@@ -565,7 +564,7 @@ void CoProWrCmdBuf(const uint8_t *buff, uint32_t count)
     // FIFO in order to make room in the FIFO for more RAM_G data.  That data might be part of an inflate
     // operation or jpeg decode or the like.  You write to the FIFO and it inflates into RAM_G.
     
-		Wait4CoProFIFO(WorkBuffSz);                           // It is reasonable to wait for a small space instead of firing data piecemeal
+    Wait4CoProFIFO(WorkBuffSz);                           // It is reasonable to wait for a small space instead of firing data piecemeal
 
     if (Remaining > WorkBuffSz)                            // Remaining data exceeds the size of our buffer
       TransferSize = WorkBuffSz;                           // So set the transfer size to that of our buffer
@@ -586,7 +585,7 @@ void CoProWrCmdBuf(const uint8_t *buff, uint32_t count)
     wr16(REG_CMD_WRITE + RAM_REG, FifoWriteLocation);      // Manually update the write position pointer to initiate processing of the FIFO
     Remaining -= TransferSize;                             // reduce what we want by what we sent
     
-	}while (Remaining > 0);                                  // keep going as long as we still want more
+  }while (Remaining > 0);                                  // keep going as long as we still want more
 }
 
 // Write a block of data into Eve RAM space a byte at a time.
