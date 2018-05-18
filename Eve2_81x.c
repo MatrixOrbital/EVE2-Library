@@ -37,6 +37,7 @@
 
 #include <stdint.h>              // Find integer types like "uint8_t"  
 #include "Eve2_81x.h"            // Header for this file with prototypes, defines, and typedefs
+#include "MatrixEve2Conf.h"      // Header for this EVE2 Display configuration settings
 
 // For Propeller, include this:
 //#include "simpletools.h"         // Include simple tools for access to common libraries functions
