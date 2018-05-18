@@ -354,46 +354,6 @@ void StartCoProTransfer(uint32_t address, uint8_t reading);
 void CoProWrCmdBuf(const uint8_t *buffer, uint32_t count);
 uint32_t WriteBlockRAM(uint32_t Add, const uint8_t *buff, uint32_t count);
 
-// Panel specific setup parameters
-
-//#define EVE2_43
-#ifdef EVE2_43 
-#define HCYCLE     548
-#define HOFFSET     43
-#define HSYNC0       0
-#define HSYNC1      41
-#define VCYCLE     292
-#define VOFFSET     12
-#define VSYNC0       0
-#define VSYNC1      10
-#define PCLK         5
-#define SWIZZLE      0
-#define PCLK_POL     1
-#define HSIZE      480
-#define VSIZE      272
-#define CSPREAD      1
-#define DITHER       1
-#endif
-
-#define EVE2_35
-#ifdef EVE2_35 
-#define HCYCLE     408
-#define HOFFSET     68
-#define HSYNC0       0
-#define HSYNC1      10
-#define VCYCLE     262
-#define VOFFSET     18
-#define VSYNC0       0
-#define VSYNC1       2
-#define PCLK         8
-#define SWIZZLE      0
-#define PCLK_POL     0
-#define HSIZE      320
-#define VSIZE      240
-#define CSPREAD      1
-#define DITHER       1
-#endif
-
 #ifdef __cplusplus
 }
 #endif
