@@ -344,6 +344,7 @@ void Cmd_GradientColor(uint32_t c);
 void Cmd_FGcolor(uint32_t c);
 void Cmd_Translate(uint32_t tx, uint32_t ty);
 void Cmd_Rotate(uint32_t a);
+void Cmd_SetRotate(uint32_t rotation);
 void Cmd_Scale(uint32_t sx, uint32_t sy);
 void Cmd_Calibrate(uint32_t result);
 

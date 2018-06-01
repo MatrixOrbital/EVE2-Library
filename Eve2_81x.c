@@ -470,6 +470,13 @@ void Cmd_Rotate(uint32_t a)
   Send_CMD(a);
 }
 
+// *** Rotate Screen - FT81x Series Programmers Guide Section 5.53 ***********************************************
+void Cmd_SetRotate(uint32_t rotation)
+{
+  Send_CMD(CMD_SETROTATE);
+  Send_CMD(rotation);
+}
+
 // *** Scale Matrix - FT81x Series Programmers Guide Section 5.49 ************************************************
 void Cmd_Scale(uint32_t sx, uint32_t sy)
 {
