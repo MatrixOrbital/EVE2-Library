@@ -88,6 +88,7 @@ extern "C" {
 #define CMD_SETBITMAP        0xFFFFFF43
 #define CMD_SETFONT          0xFFFFFF2B
 #define CMD_SETMATRIX        0xFFFFFF2A
+#define CMD_SETROTATE        0xFFFFFF36
 #define CMD_SKETCH           0xFFFFFF30
 #define CMD_SLIDER           0xFFFFFF10
 #define CMD_SNAPSHOT         0xFFFFFF1F
