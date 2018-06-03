@@ -62,11 +62,11 @@ void FT81x_Init(void)
   HostCommand(HCMD_ACTIVE);
   MyDelay(100);
   
-  // Read Eve device ID until it is 0x7c
-  while (!ready)
-    ready = Cmd_READ_REG_ID();
+  do{
+  	  ready = Cmd_READ_REG_ID();
+  	}while (ready != 0x7c);
     
-//  Log("Eve now ACTIVE\n");
+//  Log("Eve now ACTIVE\n");  // Read Eve device ID until it is 0x7c
   
   // turn off screen output during startup
   wr8(REG_GPIOX + RAM_REG, 0);             // Set REG_GPIOX to 0 to turn off the LCD DISP signal
