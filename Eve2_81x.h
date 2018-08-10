@@ -343,11 +343,13 @@ void Cmd_Memcpy(uint32_t dest, uint32_t src, uint32_t num);
 void Cmd_GetPtr(void);
 void Cmd_GradientColor(uint32_t c);
 void Cmd_FGcolor(uint32_t c);
+void Cmd_BGcolor(uint32_t c);
 void Cmd_Translate(uint32_t tx, uint32_t ty);
 void Cmd_Rotate(uint32_t a);
 void Cmd_SetRotate(uint32_t rotation);
 void Cmd_Scale(uint32_t sx, uint32_t sy);
 void Cmd_Calibrate(uint32_t result);
+void Calibrate_Manual(uint16_t Width, uint16_t Height, uint16_t V_Offset, uint16_t H_Offset);
 
 uint16_t CoProFIFO_FreeSpace(void);
 void Wait4CoProFIFO(uint32_t room);
@@ -355,6 +357,7 @@ void Wait4CoProFIFOEmpty(void);
 void StartCoProTransfer(uint32_t address, uint8_t reading);
 void CoProWrCmdBuf(const uint8_t *buffer, uint32_t count);
 uint32_t WriteBlockRAM(uint32_t Add, const uint8_t *buff, uint32_t count);
+int32_t CalcCoef(int32_t Q, int32_t K);
 
 #ifdef __cplusplus
 }

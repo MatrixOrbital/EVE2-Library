@@ -64,7 +64,7 @@ void FT81x_Init(void)
   
   do{
   	  ready = Cmd_READ_REG_ID();
-  	}while (ready != 0x7c);
+  	}while (!ready);
     
 //  Log("Eve now ACTIVE\n");  // Read Eve device ID until it is 0x7c
   
@@ -455,6 +455,13 @@ void Cmd_FGcolor(uint32_t c)
   Send_CMD(c);
 }
 
+// *** Set BG color - FT81x Series Programmers Guide Section 5.31 ************************************************
+void Cmd_BGcolor(uint32_t c)
+{
+  Send_CMD(CMD_BGCOLOR);
+  Send_CMD(c);
+}
+
 // *** Translate Matrix - FT81x Series Programmers Guide Section 5.51 ********************************************
 void Cmd_Translate(uint32_t tx, uint32_t ty)
 {
@@ -491,6 +498,98 @@ void Cmd_Calibrate(uint32_t result)
 {
   Send_CMD(CMD_CALIBRATE);
   Send_CMD(result);
+}
+
+// An interactive calibration screen is created and executed.  
+// New calibration values are written to the touch matrix registers of Eve.
+void Calibrate_Manual(uint16_t Width, uint16_t Height, uint16_t V_Offset, uint16_t H_Offset)
+{
+  uint32_t displayX[3], displayY[3];
+  uint32_t touchX[3], touchY[3]; 
+  uint32_t touchValue = 0, storedValue = 0;  
+  int32_t tmp, k;
+  int32_t TransMatrix[6];
+  uint8_t count = 0;
+  char num[2];
+
+  // These values determine where your calibration points will be drawn on your display
+  displayX[0] = (Width * 0.15) + H_Offset;
+  displayY[0] = (Height * 0.15) + V_Offset;
+  
+  displayX[1] = (Width * 0.85) + H_Offset;
+  displayY[1] = (Height / 2) + V_Offset;
+  
+  displayX[2] = (Width / 2) + H_Offset;
+  displayY[2] = (Height * 0.85) + V_Offset;
+
+  while (count < 3) 
+  {
+    Send_CMD(CMD_DLSTART);
+    Send_CMD(CLEAR_COLOR_RGB(64, 64, 64));
+    Send_CMD(CLEAR(1,1,1));
+
+    // Draw Calibration Point on screen
+    Send_CMD(COLOR_RGB(255, 0, 0));
+    Send_CMD(POINT_SIZE(20 * 16));
+    Send_CMD(BEGIN(POINTS));
+    Send_CMD(VERTEX2F((uint32_t)(displayX[count]) * 16, (uint32_t)((displayY[count])) * 16)); 
+    Send_CMD(END());
+    Send_CMD(COLOR_RGB(255, 255, 255));
+    Cmd_Text((Width / 2) + H_Offset, (Height / 3) + V_Offset, 27, OPT_CENTER, "Calibrating");
+    Cmd_Text((Width / 2) + H_Offset, (Height / 2) + V_Offset, 27, OPT_CENTER, "Please tap the dots");
+    num[0] = count + 0x31; num[1] = 0;                                            // null terminated string of one character
+    Cmd_Text(displayX[count], displayY[count], 27, OPT_CENTER, num);
+
+    Send_CMD(DISPLAY());
+    Send_CMD(CMD_SWAP);
+    UpdateFIFO();                                                                 // Trigger the CoProcessor to start processing commands out of the FIFO
+    Wait4CoProFIFOEmpty();                                                        // wait here until the coprocessor has read and executed every pending command.
+    MyDelay(300);
+
+    touchValue = rd32(REG_TOUCH_DIRECT_XY + RAM_REG);                             // Read for any new touch tag inputs
+    if (!(touchValue & 0x80000000))
+    {
+      touchX[count] = (touchValue>>16) & 0x03FF;                                  // Raw Touchscreen Y coordinate
+      touchY[count] = touchValue & 0x03FF;                                        // Raw Touchscreen Y coordinate
+      
+      //Log("\ndisplay x[%d]: %ld display y[%d]: %ld\n", count, displayX[count], count, displayY[count]);
+      //Log("touch x[%d]: %ld touch y[%d]: %ld\n", count, touchX[count], count, touchY[count]);
+      
+      count++;
+    }
+  }
+
+  k = ((touchX[0] - touchX[2]) * (touchY[1] - touchY[2])) - ((touchX[1] - touchX[2]) * (touchY[0] - touchY[2])); 
+  
+  tmp = (((displayX[0] - displayX[2]) * (touchY[1] - touchY[2])) - ((displayX[1] - displayX[2])*(touchY[0] - touchY[2])));
+  TransMatrix[0] = CalcCoef(tmp, k);
+
+  tmp = (((touchX[0] - touchX[2]) * (displayX[1] - displayX[2])) - ((displayX[0] - displayX[2])*(touchX[1] - touchX[2])));  
+  TransMatrix[1] = CalcCoef(tmp, k);
+  
+  tmp = ((touchY[0] * (((touchX[2] * displayX[1]) - (touchX[1] * displayX[2])))) + (touchY[1] * (((touchX[0] * displayX[2]) - (touchX[2] * displayX[0])))) + (touchY[2] * (((touchX[1] * displayX[0]) - (touchX[0] * displayX[1])))));    
+  TransMatrix[2] = CalcCoef(tmp, k);
+    
+  tmp = (((displayY[0] - displayY[2]) * (touchY[1] - touchY[2])) - ((displayY[1] - displayY[2])*(touchY[0] - touchY[2])));  
+  TransMatrix[3] = CalcCoef(tmp, k);
+    
+  tmp = (((touchX[0] - touchX[2]) * (displayY[1] - displayY[2])) - ((displayY[0] - displayY[2])*(touchX[1] - touchX[2])));  
+  TransMatrix[4] = CalcCoef(tmp, k);
+    
+  tmp = ((touchY[0] * (((touchX[2] * displayY[1]) - (touchX[1] * displayY[2])))) + (touchY[1] * (((touchX[0] * displayY[2]) - (touchX[2] * displayY[0])))) + (touchY[2] * (((touchX[1] * displayY[0]) - (touchX[0] * displayY[1])))));  
+  TransMatrix[5] = CalcCoef(tmp, k);
+  
+  count = 0;
+  do
+  {
+    wr32(REG_TOUCH_TRANSFORM_A + RAM_REG + (count * 4), TransMatrix[count]);  // Write to Eve config registers
+
+//    uint16_t ValH = TransMatrix[count] >> 16;
+//    uint16_t ValL = TransMatrix[count] & 0xFFFF;
+//    Log("TM%d: 0x%04x %04x\n", count, ValH, ValL);
+    
+    count++;
+  }while(count < 6);
 }
 
 // The following propositional functions are not terribly useful.  I note it here in case you are looking for them.
@@ -607,3 +706,32 @@ uint32_t WriteBlockRAM(uint32_t Add, const uint8_t *buff, uint32_t count)
   return (WriteAddress);
 }
 
+int32_t CalcCoef(int32_t Q, int32_t K)
+{
+  int8_t sn = 0;
+
+  if (Q < 0)                                       // We need to work with positive values
+  {
+    Q *= -1;                                       // So here we make them positive
+    sn++;                                          // and remember that fact
+  }
+
+  if (K < 0)                                       
+  {
+    K *= -1;
+    sn++;                                          // 1 + 1 = 2 = 0b00000010
+  }  
+
+  
+  uint32_t I = ((uint32_t)Q / (uint32_t)K) << 16;  // get the integer part and shift it by 16
+  uint32_t R = Q % K;                              // get the remainder of a/k;
+  R = R << 14;                                     // shift by 14 
+  R = R / K;                                       // divide
+  R = R << 2;                                      // Make up for the missing bits  
+  int32_t returnValue = I + R;                     // combine them
+
+  if (sn & 0x01)                                   // If the result is supposed to be negative
+    returnValue *= -1;                             // then return it to that state.
+      
+  return (returnValue);
+}

@@ -1,12 +1,16 @@
 //User selectable configurations.
 //#define EVE2_70
 //#define EVE2_50
-#define EVE2_43
-//#define EVE2_38
+//#define EVE2_43
+#define EVE2_38
 //#define EVE2_35
 //#define EVE2_29
 
 #ifdef EVE2_70
+#define DWIDTH     800
+#define DHEIGHT    480
+#define PIXVOFFSET   0
+#define PIXHOFFSET   0
 #define HCYCLE     928
 #define HOFFSET     88
 #define HSYNC0       0
@@ -25,6 +29,10 @@
 #endif
 
 #ifdef EVE2_50
+#define DWIDTH     800
+#define DHEIGHT    480
+#define PIXVOFFSET   0
+#define PIXHOFFSET   0
 #define HCYCLE     928
 #define HOFFSET     88
 #define HSYNC0       0
@@ -43,6 +51,10 @@
 #endif
 
 #ifdef EVE2_43
+#define DWIDTH     480
+#define DHEIGHT    272
+#define PIXVOFFSET   0
+#define PIXHOFFSET   0
 #define HCYCLE     548
 #define HOFFSET     43
 #define HSYNC0       0
@@ -61,6 +73,10 @@
 #endif
 
 #ifdef EVE2_38
+#define DWIDTH     480
+#define DHEIGHT    116
+#define PIXVOFFSET  10
+#define PIXHOFFSET   0
 #define HCYCLE     524
 #define HOFFSET     43
 #define HSYNC0       0
@@ -79,6 +95,10 @@
 #endif
 
 #ifdef EVE2_35
+#define DWIDTH     320
+#define DHEIGHT    240
+#define PIXVOFFSET   0
+#define PIXHOFFSET   0
 #define HCYCLE     408
 #define HOFFSET     68
 #define HSYNC0       0
@@ -97,6 +117,10 @@
 #endif
 
 #ifdef EVE2_29
+#define DWIDTH     320
+#define DHEIGHT    102
+#define PIXVOFFSET   0
+#define PIXHOFFSET   0
 #define HCYCLE     408
 #define HOFFSET     70
 #define HSYNC0       0
