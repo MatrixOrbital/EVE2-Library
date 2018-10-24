@@ -39,12 +39,6 @@
 #include "Eve2_81x.h"            // Header for this file with prototypes, defines, and typedefs
 #include "MatrixEve2Conf.h"      // Header for this EVE2 Display configuration settings
 
-// For Propeller, include this:
-//#include "simpletools.h"         // Include simple tools for access to common libraries functions
-// For Propeller, include only one of the following
-//#include "THISLIB_AL.h"          // Include HAL prototypes for library creation - comment for application
-//#include "EveLib_AL.h"           // Include HAL functions - comment for library creation
-
 // For Arduino, include this:
 #include "Arduino_AL.h"        // Include the hardware abstraction layer for your target processor
 
@@ -54,19 +48,42 @@ uint16_t FifoWriteLocation = 0;
 // Call this function once at powerup to reset and initialize the Eve chip
 void FT81x_Init(void)
 {  
-  uint8_t ready = false;
+  uint32_t Ready = false;
   
   Eve_Reset(); // Hard reset of the Eve chip
 
   // Wakeup Eve
+  HostCommand(HCMD_CLKEXT);
   HostCommand(HCMD_ACTIVE);
-  MyDelay(100);
+  MyDelay(300);
   
-  do{
-  	  ready = Cmd_READ_REG_ID();
-  	}while (!ready);
-    
-//  Log("Eve now ACTIVE\n");  // Read Eve device ID until it is 0x7c
+  do
+  {
+    Ready = Cmd_READ_REG_ID();
+  }while (!Ready);
+
+//  Log("Eve now ACTIVE\n");         //
+  
+  Ready = rd32(REG_CHIP_ID);
+//  uint16_t ValH = Ready >> 16;
+//  uint16_t ValL = Ready & 0xFFFF;
+//  Log("Chip ID = 0x%04x%04x\n", ValH, ValL);
+
+  wr32(REG_FREQUENCY + RAM_REG, 0x3938700); // Configure the system clock to 60MHz
+
+  // Before we go any further with Eve, it is a good idea to check to see if she is wigging out about something 
+  // that happened before the last reset.  If Eve has just done a power cycle, this would be unnecessary.
+  if( rd16(REG_CMD_READ + RAM_REG) == 0xFFF )
+  {
+    // Eve is unhappy - needs a paddling.
+    uint32_t Patch_Add = rd32(REG_COPRO_PATCH_PTR + RAM_REG);
+    wr8(REG_CPU_RESET + RAM_REG, 1);
+    wr8(REG_CMD_READ + RAM_REG, 0);
+    wr8(REG_CMD_WRITE + RAM_REG, 0);
+    wr8(REG_CMD_DL + RAM_REG, 0);
+    wr8(REG_CPU_RESET + RAM_REG, 0);
+    wr32(REG_COPRO_PATCH_PTR + RAM_REG, Patch_Add);
+  }
   
   // turn off screen output during startup
   wr8(REG_GPIOX + RAM_REG, 0);             // Set REG_GPIOX to 0 to turn off the LCD DISP signal
@@ -492,6 +509,12 @@ void Cmd_Scale(uint32_t sx, uint32_t sy)
   Send_CMD(sy);
 }
 
+void Cmd_Flash_Fast(void)
+{
+  Send_CMD(CMD_FLASHFAST);
+  Send_CMD(0);
+}
+
 // *** Calibrate Touch Digitizer - FT81x Series Programmers Guide Section 5.52 ***********************************
 // * This business about "result" in the manual really seems to be simply leftover cruft of no purpose - send zero
 void Cmd_Calibrate(uint32_t result)
@@ -592,11 +615,6 @@ void Calibrate_Manual(uint16_t Width, uint16_t Height, uint16_t V_Offset, uint16
   }while(count < 6);
 }
 
-// The following propositional functions are not terribly useful.  I note it here in case you are looking for them.
-// Find Inflate used in Load_ZLIB() and Loadimage used in Load_JPG() (process.c)
-// void Cmd_Loadimage( uint32_t addr, uint32_t options )
-// void Cmd_Inflate( uint32_t addr, uint32_t options )
-
 // ***************************************************************************************************************
 // *** Utility and helper functions ******************************************************************************
 // ***************************************************************************************************************
@@ -625,9 +643,41 @@ void Wait4CoProFIFO(uint32_t room)
 }
 
 // Sit and wait until the CoPro FIFO is empty
+// Detect operational errors and print the error and stop.
 void Wait4CoProFIFOEmpty(void)
 {
-  while( rd16(REG_CMD_READ + RAM_REG) != rd16(REG_CMD_WRITE + RAM_REG) );
+  uint16_t ReadReg;
+  uint8_t ErrChar;
+  uint8_t buffy[2];
+  do
+  {
+    ReadReg = rd16(REG_CMD_READ + RAM_REG);
+    if(ReadReg == 0xFFF)
+    {
+      // this is a error which would require sophistication to fix and continue but we fake it somewhat unsuccessfully
+      Log("\n");
+      uint8_t Offset = 0;
+      do
+      {
+        // Get the error character and display it
+        ErrChar = rd8(RAM_ERR_REPORT + Offset);
+        Offset++;
+        sprintf(buffy, "%c", ErrChar);
+        Log(buffy);
+      }while ( (ErrChar != 0) && (Offset < 128) ); // when the last stuffed character was null, we are done
+      Log("\n");
+
+      // Eve is unhappy - needs a paddling.
+      uint32_t Patch_Add = rd32(REG_COPRO_PATCH_PTR + RAM_REG);
+      wr8(REG_CPU_RESET + RAM_REG, 1);
+      wr8(REG_CMD_READ + RAM_REG, 0);
+      wr8(REG_CMD_WRITE + RAM_REG, 0);
+      wr8(REG_CMD_DL + RAM_REG, 0);
+      wr8(REG_CPU_RESET + RAM_REG, 0);
+      wr32(REG_COPRO_PATCH_PTR + RAM_REG, Patch_Add);
+      delay(250);  // we already saw one error message and we don't need to see then 1000 times a second
+    }
+  }while( ReadReg != rd16(REG_CMD_WRITE + RAM_REG) );
 }
 
 // Every CoPro transaction starts with enabling the SPI and sending an address
@@ -665,10 +715,8 @@ void CoProWrCmdBuf(const uint8_t *buff, uint32_t count)
     // Since the FIFO is 4K in size, but the RAM_G space is 1M in size, you can not, obviously, send all
     // the possible RAM_G data through the FIFO in one step.  Also, since the Eve is not capable of updating
     // it's own FIFO pointer as data is written, you will need to intermittently tell Eve to go process some
-    // FIFO in order to make room in the FIFO for more RAM_G data.  That data might be part of an inflate
-    // operation or jpeg decode or the like.  You write to the FIFO and it inflates into RAM_G.
-    
-    Wait4CoProFIFO(WorkBuffSz);                           // It is reasonable to wait for a small space instead of firing data piecemeal
+    // FIFO in order to make room in the FIFO for more RAM_G data.    
+    Wait4CoProFIFO(WorkBuffSz);                            // It is reasonable to wait for a small space instead of firing data piecemeal
 
     if (Remaining > WorkBuffSz)                            // Remaining data exceeds the size of our buffer
       TransferSize = WorkBuffSz;                           // So set the transfer size to that of our buffer
@@ -706,6 +754,7 @@ uint32_t WriteBlockRAM(uint32_t Add, const uint8_t *buff, uint32_t count)
   return (WriteAddress);
 }
 
+// CalcCoef - Support function for manual screen calibration function
 int32_t CalcCoef(int32_t Q, int32_t K)
 {
   int8_t sn = 0;
@@ -721,7 +770,6 @@ int32_t CalcCoef(int32_t Q, int32_t K)
     K *= -1;
     sn++;                                          // 1 + 1 = 2 = 0b00000010
   }  
-
   
   uint32_t I = ((uint32_t)Q / (uint32_t)K) << 16;  // get the integer part and shift it by 16
   uint32_t R = Q % K;                              // get the remainder of a/k;

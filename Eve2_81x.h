@@ -66,6 +66,7 @@ extern "C" {
 #define CMD_GRADCOLOR        0xFFFFFF34
 #define CMD_GRADIENT         0xFFFFFF0B
 #define CMD_INFLATE          0xFFFFFF22
+#define CMD_INFLATE2         0xFFFFFF50
 #define CMD_INTERRUPT        0xFFFFFF02
 #define CMD_KEYS             0xFFFFFF0E
 #define CMD_LOADIDENTITY     0xFFFFFF26
@@ -102,12 +103,31 @@ extern "C" {
 #define CMD_VIDEOFRAME       0xFFFFFF41
 #define CMD_VIDEOSTART       0xFFFFFF40
 
+// BT81X COMMANDS 
+#define CMD_FLASHERASE       0xFFFFFF44
+#define CMD_FLASHWRITE       0xFFFFFF45
+#define CMD_FLASHREAD        0xFFFFFF46
+#define CMD_FLASHUPDATE      0xFFFFFF47
+#define CMD_FLASHDETACH      0xFFFFFF48
+#define CMD_FLASHATTACH      0xFFFFFF49
+#define CMD_FLASHFAST        0xFFFFFF4A
+#define CMD_FLASHSPIDESEL    0xFFFFFF4B
+#define CMD_FLASHSPITX       0xFFFFFF4C
+#define CMD_FLASHSPIRX       0xFFFFFF4D
+#define CMD_FLASHSOURCE      0xFFFFFF4E
+#define CMD_CLEARCACHE       0xFFFFFF4F
+#define CMD_FLASHAPPENDF     0xFFFFFF59
+#define CMD_VIDEOSTARTF      0xFFFFFF5F
+
 #define DLSWAP_FRAME         2UL
 
 #define OPT_CENTER           1536UL
 #define OPT_CENTERX          512UL
 #define OPT_CENTERY          1024UL
+#define OPT_FLASH            64UL
 #define OPT_FLAT             256UL
+#define OPT_FULLSCREEN       8UL
+#define OPT_MEDIAFIFO        16UL
 #define OPT_MONO             1UL
 #define OPT_NOBACK           4096UL
 #define OPT_NODL             2UL
@@ -115,20 +135,27 @@ extern "C" {
 #define OPT_NOHM             16384UL
 #define OPT_NOPOINTER        16384UL
 #define OPT_NOSECS           32768UL
+#define OPT_NOTEAR           4UL
 #define OPT_NOTICKS          8192UL
+#define OPT_RGB565           0UL
 #define OPT_RIGHTX           2048UL
 #define OPT_SIGNED           256UL
+#define OPT_SOUND            32UL
 
 // Definitions for FT8xx co processor command buffer
 #define FT_DL_SIZE           (8*1024)  // 8KB Display List buffer size
 #define FT_CMD_FIFO_SIZE     (4*1024)  // 4KB coprocessor Fifo size
 #define FT_CMD_SIZE          (4)       // 4 byte per coprocessor command of EVE
 
-// Memory block base addresses
+// Memory base addresses
 #define RAM_G                    0x0
+#define RAM_G_WORKING            0x0FF000 // This address may be used as the start of a 4K block to be used for copying data
 #define RAM_DL                   0x300000
 #define RAM_REG                  0x302000
 #define RAM_CMD                  0x308000
+#define RAM_ERR_REPORT           0x309800 // max 128 bytes null terminated string
+#define RAM_FLASH                0x800000
+#define RAM_FLASH_POSTBLOB       0x801000
 
 // Graphics Engine Registers - FT81x Series Programmers Guide Section 3.1
 // Addresses defined as offsets from the base address called RAM_REG and located at 0x302000
@@ -224,6 +251,7 @@ extern "C" {
 #define REG_CMD_WRITE             0xFC
 #define REG_CMDB_SPACE            0x574
 #define REG_CMDB_WRITE            0x578
+#define REG_COPRO_PATCH_PTR       0x7162
 
 // Special Registers - FT81x Series Programmers Guide Section 3.5 
 // Addresses assumed to be defined as offsets from the base address called RAM_REG and located at 0x302000
@@ -234,6 +262,10 @@ extern "C" {
 #define REG_TRACKER_4             0x7010
 #define REG_MEDIAFIFO_READ        0x7014
 #define REG_MEDIAFIFO_WRITE       0x7018
+
+// Flash related registers
+#define REG_FLASH_STATUS          0x5F0
+#define REG_FLASH_SIZE            0x7024
 
 // Miscellaneous Registers - FT81x Series Programmers Guide Section 3.6 - Document inspecific about base address
 // Addresses assumed to be defined as offsets from the base address called RAM_REG and located at 0x302000
@@ -253,6 +285,7 @@ extern "C" {
 #define REG_ID                    0x00
 #define REG_TRIM                  0x10256C
 #define REG_SPI_WIDTH             0x180
+#define REG_CHIP_ID               0xC0000   // Temporary Chip ID location in RAMG
 
 // Primitive Type Reference Definitions - FT81x Series Programmers Guide Section 4.5 - Table 6
 #define BITMAPS                    1
@@ -266,27 +299,50 @@ extern "C" {
 #define RECTS                      9
 
 // Bitmap Layout Format Definitions - FT81x Series Programmers Guide Section 4.7 - Table 7
-#define ARGB1555                   0
-#define L1                         1
-#define L4                         2
-#define L8                         3
-#define RGB332                     4
-#define ARGB2                      5
-#define ARGB4                      6
-#define RGB565                     7
-#define TEXT8X8                    9
-#define TEXTVGA                   10
-#define BARGRAPH                  11
-#define PALETTED565               14
-#define PALETTED4444              15
-#define PALETTED8                 16
-#define L2                        17
+#define ARGB1555                           0
+#define L1                                 1
+#define L4                                 2
+#define L8                                 3
+#define RGB332                             4
+#define ARGB2                              5
+#define ARGB4                              6
+#define RGB565                             7
+#define TEXT8X8                            9
+#define TEXTVGA                           10
+#define BARGRAPH                          11
+#define PALETTED565                       14
+#define PALETTED4444                      15
+#define PALETTED8                         16
+#define L2                                17
+
+// Bitmap Layout Format Definitions - BT81X Series Programming Guide Section 4.6
+#define COMPRESSED_RGBA_ASTC_4x4_KHR   37808  // 8.00
+#define COMPRESSED_RGBA_ASTC_5x4_KHR   37809  // 6.40
+#define COMPRESSED_RGBA_ASTC_5x5_KHR   37810  // 5.12
+#define COMPRESSED_RGBA_ASTC_6x5_KHR   37811  // 4.27
+#define COMPRESSED_RGBA_ASTC_6x6_KHR   37812  // 3.56
+#define COMPRESSED_RGBA_ASTC_8x5_KHR   37813  // 3.20
+#define COMPRESSED_RGBA_ASTC_8x6_KHR   37814  // 2.67
+#define COMPRESSED_RGBA_ASTC_8x8_KHR   37815  // 2.56
+#define COMPRESSED_RGBA_ASTC_10x5_KHR  37816  // 2.13
+#define COMPRESSED_RGBA_ASTC_10x6_KHR  37817  // 2.00
+#define COMPRESSED_RGBA_ASTC_10x8_KHR  37818  // 1.60
+#define COMPRESSED_RGBA_ASTC_10x10_KHR 37819  // 1.28
+#define COMPRESSED_RGBA_ASTC_12x10_KHR 37820  // 1.07
+#define COMPRESSED_RGBA_ASTC_12x12_KHR 37821  // 0.89
 
 // Bitmap Parameters
 #define REPEAT                     1
 #define BORDER                     0
 #define NEAREST                    0
 #define BILINEAR                   1
+
+// Flash Status
+#define FLASH_STATUS_INIT          0UL
+#define FLASH_STATUS_DETACHED      1UL
+#define FLASH_STATUS_BASIC         2UL
+#define FLASH_STATUS_FULL          3UL
+
 
 // These defined "macros" are supplied by FTDI - Manufacture command bit-fields from parameters
 // FT81x Series Programmers Guide is refered to as "FT-PG"
@@ -349,6 +405,8 @@ void Cmd_Rotate(uint32_t a);
 void Cmd_SetRotate(uint32_t rotation);
 void Cmd_Scale(uint32_t sx, uint32_t sy);
 void Cmd_Calibrate(uint32_t result);
+void Cmd_Flash_Fast(void);
+
 void Calibrate_Manual(uint16_t Width, uint16_t Height, uint16_t V_Offset, uint16_t H_Offset);
 
 uint16_t CoProFIFO_FreeSpace(void);
