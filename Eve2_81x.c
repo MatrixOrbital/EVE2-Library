@@ -534,6 +534,7 @@ void Calibrate_Manual(uint16_t Width, uint16_t Height, uint16_t V_Offset, uint16
   int32_t TransMatrix[6];
   uint8_t count = 0;
   char num[2];
+  uint8_t touch_lock = 1;
 
   // These values determine where your calibration points will be drawn on your display
   displayX[0] = (Width * 0.15) + H_Offset;
@@ -567,19 +568,31 @@ void Calibrate_Manual(uint16_t Width, uint16_t Height, uint16_t V_Offset, uint16
     Send_CMD(CMD_SWAP);
     UpdateFIFO();                                                                 // Trigger the CoProcessor to start processing commands out of the FIFO
     Wait4CoProFIFOEmpty();                                                        // wait here until the coprocessor has read and executed every pending command.
-    MyDelay(300);
+    //MyDelay(300);
 
-    touchValue = rd32(REG_TOUCH_DIRECT_XY + RAM_REG);                             // Read for any new touch tag inputs
-    if (!(touchValue & 0x80000000))
-    {
-      touchX[count] = (touchValue>>16) & 0x03FF;                                  // Raw Touchscreen Y coordinate
-      touchY[count] = touchValue & 0x03FF;                                        // Raw Touchscreen Y coordinate
-      
-      //Log("\ndisplay x[%d]: %ld display y[%d]: %ld\n", count, displayX[count], count, displayY[count]);
-      //Log("touch x[%d]: %ld touch y[%d]: %ld\n", count, touchX[count], count, touchY[count]);
-      
-      count++;
-    }
+		while(1)
+		{
+			touchValue = rd32(REG_TOUCH_DIRECT_XY + RAM_REG); 	// Read for any new touch tag inputs
+			
+			if(touch_lock)
+			{
+				if(touchValue & 0x80000000) // check if we have no touch
+				{
+					touch_lock = 0;
+				}
+			}
+			else
+			{
+				if (!(touchValue & 0x80000000)) // check if a touch is detected
+				{
+					touchX[count] = (touchValue>>16) & 0x03FF;	// Raw Touchscreen Y coordinate
+					touchY[count] = touchValue & 0x03FF;		// Raw Touchscreen Y coordinate
+					touch_lock = 1;
+					count++;
+					break; // leave while(1)
+				}
+			}
+		}
   }
 
   //Old method of using CalcCoef inaccurately calibrated the 38 touch panel
