@@ -13,6 +13,9 @@
 // Hint: It is easy to manufacture your own "CoProcessor command" out of, say wr32() calls, but don't
 // forget to manually update the FIFO write pointer to account for those locations you wrote or your track
 // of the next FIFO address will fail.
+// Hint2: Resetting Eve properly is not easy.  If you opt for a power cycle instead of relying on the PD
+// line, be aware that Eve will vampire power from a logic signal on almost ANY PIN!  Tristate all SPI lines
+// PD, etc before attempting to remove power or Eve will simply remain powered via, say, MOSI.
 
 // See the header Eve2_81x.h for a list of required functions - include them here.
 
