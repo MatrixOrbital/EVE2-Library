@@ -2,7 +2,8 @@
 //#define EVE2_70
 //#define EVE2_50
 //#define EVE2_43
-#define EVE2_38
+#define EVE2_39
+//#define EVE2_38
 //#define EVE2_35
 //#define EVE2_29
 
@@ -72,6 +73,28 @@
 #define DITHER       1
 #endif
 
+#ifdef EVE2_39
+#define DWIDTH     480
+#define DHEIGHT    128
+#define PIXVOFFSET   0
+#define PIXHOFFSET   0
+#define HCYCLE     524
+#define HOFFSET     16
+#define HSYNC0       0
+#define HSYNC1      44
+#define VCYCLE     288
+#define VOFFSET     12
+#define VSYNC0      11
+#define VSYNC1      8
+#define PCLK         5
+#define SWIZZLE      0
+#define PCLK_POL     1
+#define HSIZE      480
+#define VSIZE      128
+#define CSPREAD      1
+#define DITHER       1
+#endif
+  
 #ifdef EVE2_38
 #define DWIDTH     480
 #define DHEIGHT    116

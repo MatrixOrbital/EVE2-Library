@@ -1,49 +1,39 @@
 // Eve2 Processor Agnostic Library (Condensed)
-//
+
 // This "library" consists of the files "Eve2_81x.c" and "Eve2_81x.h".
 //
 // In persuit of the common goal of simplicity and understandability I find that I am unable to
 // make function prototypes that match Bridgetek example code.  I draw the line between the 
-// Eve and all other hardware. The library is "clean" and includes no abstraction at all, unlike 
-// much of the example code on the Internet which is sort of application and abstraction mixed 
-// together in a confusing abuse of my eye-holes.  
+// Eve and all other hardware. The library is "clean" and includes no abstraction at all.
 // My intent is to be as straight forward and understandable as possible, so while function 
 // names and parameter lists are different than Bridgetek code examples, they should be easily 
 // recognizable.  I have also made every attempt to reference Bridgetek documentation against 
-// the code to act as a translation to help in understanding.
-
-// Notes on the operation of the Eve command processing engine - THE FIFO
+// the code to act as a translation to help in understanding - sorry when those references get stale.
 //
-// First be aware that the FTDI documentation variously refers to you as "User", "MCU", "Host".
-// 
-// The FIFO, like all FIFO's needs pointers to indicate the starting address of buffered data and
-// the end address of buffered data.  There is wrapping involved, but the basic idea is clear.
-// Eve takes data into it's FIFO using a fully defined write operation to a memory address - that 
-// is, you need to take care of the wrapping - to you, it is not a FIFO - it is a piece of memory.
-// Eve keeps track of it's own read address location, but relies on you to write the address
-// of the end of buffered data.
-// 
-// So as commands are loaded into RAM - into the FIFO space - Eve will do nothing in response.
-// Eve is happy to take your data and store it for you while it sits with it's read address and 
-// write address set to the same value.  Once the commands are loaded, the next available address
-// is manually written (by you) to the register in which Eve stores the FIFO write pointer
-// (REG_CMD_WRITE).  
-//
-// Following this, Eve discovers that the addresses are different and begins processing commands while
-// updating it's own read pointer until the read and write pointers are the same.
-// 
-// Be aware that Eve stores only the offset into the "FIFO" as 16 bits, so any use of the offset 
-// requires adding the base address (RAM_CMD 0x308000) to the resultant 32 bit value.
+// Hint: It is easy to manufacture your own "CoProcessor command" out of, say wr32() calls, but don't
+// forget to manually update the FIFO write pointer to account for those locations you wrote or your track
+// of the next FIFO address will fail.
 
+// See the header Eve2_81x.h for a list of required functions - include them here.
+
+// Sources of abstraction - Include the hardware and software abstraction files for your target processor:
+// This list of files will contain the required functions listed in Eve2_81x.h - add and remove as required
+#include "Arduino_AL.h"        // For Arduino, see Matrix Orbital Examples for an example of this file
+//#include "RPi_AL.h"              // File function abstractions for raspberry pi
+//#include "SPI.h"                 // My raspberry pi abstractions using the BCM2835 library
+//#include "Logging.h"             // My "Log()" is defined in here for use with raspberry pi
+//#include "timer.h"               // My timer function abstractions for raspberry pi - millis(), MyDelay(), etc
+
+// This list of headers is for functionality required by this library and should not change.  Also fine for Arduino.
 #include <stdint.h>              // Find integer types like "uint8_t"  
-#include "Eve2_81x.h"            // Header for this file with prototypes, defines, and typedefs
+#include <stdbool.h>             // bool
+#include <stdlib.h>              // calloc(), free()
+#include <string.h>              // strlen()
 #include "MatrixEve2Conf.h"      // Header for this EVE2 Display configuration settings
-
-// For Arduino, include this:
-#include "Arduino_AL.h"        // Include the hardware abstraction layer for your target processor
+#include "Eve2_81x.h"            // Header for this file with prototypes, defines, and typedefs
 
 // Global Variables 
-uint16_t FifoWriteLocation = 0;
+uint16_t FifoWriteLocation = 0;  // Don't allow this variable to get out of synch - be careful about manually constructing FIFO commands
 
 // Call this function once at powerup to reset and initialize the Eve chip
 void FT81x_Init(void)
@@ -62,27 +52,30 @@ void FT81x_Init(void)
     Ready = Cmd_READ_REG_ID();
   }while (!Ready);
 
-//  Log("Eve now ACTIVE\n");         //
+  Log("Eve now ACTIVE\n");         //
   
   Ready = rd32(REG_CHIP_ID);
-//  uint16_t ValH = Ready >> 16;
-//  uint16_t ValL = Ready & 0xFFFF;
-//  Log("Chip ID = 0x%04x%04x\n", ValH, ValL);
+  uint16_t ValH = Ready >> 16;
+  uint16_t ValL = Ready & 0xFFFF;
+  Log("Chip ID = 0x%04x%04x\n", ValH, ValL);
 
   wr32(REG_FREQUENCY + RAM_REG, 0x3938700); // Configure the system clock to 60MHz
 
-  // Before we go any further with Eve, it is a good idea to check to see if she is wigging out about something 
+  // Before we go any further with Eve, it is a good idea to check to see if it is wigging out about something 
   // that happened before the last reset.  If Eve has just done a power cycle, this would be unnecessary.
   if( rd16(REG_CMD_READ + RAM_REG) == 0xFFF )
   {
     // Eve is unhappy - needs a paddling.
-    uint32_t Patch_Add = rd32(REG_COPRO_PATCH_PTR + RAM_REG);
-    wr8(REG_CPU_RESET + RAM_REG, 1);
-    wr8(REG_CMD_READ + RAM_REG, 0);
-    wr8(REG_CMD_WRITE + RAM_REG, 0);
-    wr8(REG_CMD_DL + RAM_REG, 0);
-    wr8(REG_CPU_RESET + RAM_REG, 0);
-    wr32(REG_COPRO_PATCH_PTR + RAM_REG, Patch_Add);
+    uint16_t Patch_Add = rd16(REG_COPRO_PATCH_PTR + RAM_REG);
+    wr32(REG_CPU_RESET + RAM_REG, 1);
+    wr32(REG_CMD_READ + RAM_REG, 0);
+    wr32(REG_CMD_WRITE + RAM_REG, 0);
+    wr32(REG_CMD_DL + RAM_REG, 0);
+    wr32(REG_PCLK + RAM_REG, 0);
+    FifoWriteLocation = 0;                    // reset our marker tracker variables
+    wr32(REG_CPU_RESET + RAM_REG, 0);
+    MyDelay(100);
+    wr16(REG_COPRO_PATCH_PTR + RAM_REG, Patch_Add);
   }
   
   // turn off screen output during startup
@@ -125,7 +118,7 @@ void FT81x_Init(void)
   wr8(REG_DLSWAP + RAM_REG, DLSWAP_FRAME);          // swap display lists
   wr8(REG_PCLK + RAM_REG, 5);                       // after this display is visible on the LCD
 
-//  Log("First screen written\n");
+  Log("First screen written\n");
 }
 
 // Reset Eve chip via the hardware PDN line
@@ -180,7 +173,7 @@ void wr16(uint32_t address, uint16_t parameter)
   SPI_Write((uint8_t)address);                  // Low byte of register address - usually just the 1 byte offset
   
   SPI_Write((uint8_t)(parameter & 0xff));       // Little endian (yes, it is most significant bit first and least significant byte first)
-  SPI_Write((uint8_t)(parameter >> 8));
+  SPI_Write((uint8_t)(parameter >> 8) & 0xff);
   
   SPI_Disable();
 }
@@ -370,6 +363,20 @@ void Cmd_Gradient(uint16_t x0, uint16_t y0, uint32_t rgb0, uint16_t x1, uint16_t
   Send_CMD(rgb0);
   Send_CMD( ((uint32_t)y1<<16)|x1 );
   Send_CMD(rgb1);
+}
+
+void Cmd_AnimDraw(int8_t AnimID)
+{
+  Send_CMD(CMD_ANIMDRAW);
+  Send_CMD( (int32_t)AnimID );
+}
+
+void Cmd_AnimDrawFrame(uint32_t addr, uint16_t Xpos, uint16_t Ypos, uint8_t Frame)
+{
+  Send_CMD(CMD_ANIMFRAME);
+  Send_CMD(((uint32_t)Ypos << 16) + Xpos);
+  Send_CMD(addr);
+  Send_CMD( (uint32_t)Frame );
 }
 
 // *** Draw Button - FT81x Series Programmers Guide Section 5.28 **************************************************
@@ -568,53 +575,51 @@ void Calibrate_Manual(uint16_t Width, uint16_t Height, uint16_t V_Offset, uint16
     Send_CMD(CMD_SWAP);
     UpdateFIFO();                                                                 // Trigger the CoProcessor to start processing commands out of the FIFO
     Wait4CoProFIFOEmpty();                                                        // wait here until the coprocessor has read and executed every pending command.
-    //MyDelay(300);
 
 		while(1)
-		{
-			touchValue = rd32(REG_TOUCH_DIRECT_XY + RAM_REG); 	// Read for any new touch tag inputs
+    {
+      touchValue = rd32(REG_TOUCH_DIRECT_XY + RAM_REG); 	// Read for any new touch tag inputs
 			
-			if(touch_lock)
-			{
-				if(touchValue & 0x80000000) // check if we have no touch
-				{
-					touch_lock = 0;
-				}
-			}
-			else
-			{
-				if (!(touchValue & 0x80000000)) // check if a touch is detected
-				{
-					touchX[count] = (touchValue>>16) & 0x03FF;	// Raw Touchscreen Y coordinate
-					touchY[count] = touchValue & 0x03FF;		// Raw Touchscreen Y coordinate
-					touch_lock = 1;
-					count++;
-					break; // leave while(1)
-				}
-			}
-		}
+      if(touch_lock)
+      {
+        if(touchValue & 0x80000000) // check if we have no touch
+          {
+            touch_lock = 0;
+          }
+      }
+      else
+      {
+        if (!(touchValue & 0x80000000)) // check if a touch is detected
+          {
+            touchX[count] = (touchValue>>16) & 0x03FF;	// Raw Touchscreen Y coordinate
+            touchY[count] = touchValue & 0x03FF;		// Raw Touchscreen Y coordinate
+            touch_lock = 1;
+            count++;
+            break; // leave while(1)
+          }
+      }
+    }
   }
 
-  //Old method of using CalcCoef inaccurately calibrated the 38 touch panel
-  k = ((touchX[0] - touchX[2])*(touchY[1] - touchY[2])) - ((touchX[1] - touchX[2])*(touchY[0] - touchY[2]));
-
+  k = ((touchX[0] - touchX[2]) * (touchY[1] - touchY[2])) - ((touchX[1] - touchX[2]) * (touchY[0] - touchY[2])); 
+  
   tmp = (((displayX[0] - displayX[2]) * (touchY[1] - touchY[2])) - ((displayX[1] - displayX[2])*(touchY[0] - touchY[2])));
-  TransMatrix[0] = ((int64_t)tmp << 16) / k;
+  TransMatrix[0] = CalcCoef(tmp, k);
 
-  tmp = (((touchX[0] - touchX[2]) * (displayX[1] - displayX[2])) - ((displayX[0] - displayX[2])*(touchX[1] - touchX[2])));
-  TransMatrix[1] = ((int64_t)tmp << 16) / k;
-
-  tmp = ((touchY[0] * (((touchX[2] * displayX[1]) - (touchX[1] * displayX[2])))) + (touchY[1] * (((touchX[0] * displayX[2]) - (touchX[2] * displayX[0])))) + (touchY[2] * (((touchX[1] * displayX[0]) - (touchX[0] * displayX[1])))));
-  TransMatrix[2] = ((int64_t)tmp << 16) / k;
-
-  tmp = (((displayY[0] - displayY[2]) * (touchY[1] - touchY[2])) - ((displayY[1] - displayY[2])*(touchY[0] - touchY[2])));
-  TransMatrix[3] = ((int64_t)tmp << 16) / k;
-
-  tmp = (((touchX[0] - touchX[2]) * (displayY[1] - displayY[2])) - ((displayY[0] - displayY[2])*(touchX[1] - touchX[2])));
-  TransMatrix[4] = ((int64_t)tmp << 16) / k;
-
-  tmp = ((touchY[0] * (((touchX[2] * displayY[1]) - (touchX[1] * displayY[2])))) + (touchY[1] * (((touchX[0] * displayY[2]) - (touchX[2] * displayY[0])))) + (touchY[2] * (((touchX[1] * displayY[0]) - (touchX[0] * displayY[1])))));
-  TransMatrix[5] = ((int64_t)tmp << 16) / k;
+  tmp = (((touchX[0] - touchX[2]) * (displayX[1] - displayX[2])) - ((displayX[0] - displayX[2])*(touchX[1] - touchX[2])));  
+  TransMatrix[1] = CalcCoef(tmp, k);
+  
+  tmp = ((touchY[0] * (((touchX[2] * displayX[1]) - (touchX[1] * displayX[2])))) + (touchY[1] * (((touchX[0] * displayX[2]) - (touchX[2] * displayX[0])))) + (touchY[2] * (((touchX[1] * displayX[0]) - (touchX[0] * displayX[1])))));    
+  TransMatrix[2] = CalcCoef(tmp, k);
+    
+  tmp = (((displayY[0] - displayY[2]) * (touchY[1] - touchY[2])) - ((displayY[1] - displayY[2])*(touchY[0] - touchY[2])));  
+  TransMatrix[3] = CalcCoef(tmp, k);
+    
+  tmp = (((touchX[0] - touchX[2]) * (displayY[1] - displayY[2])) - ((displayY[0] - displayY[2])*(touchX[1] - touchX[2])));  
+  TransMatrix[4] = CalcCoef(tmp, k);
+    
+  tmp = ((touchY[0] * (((touchX[2] * displayY[1]) - (touchX[1] * displayY[2])))) + (touchY[1] * (((touchX[0] * displayY[2]) - (touchX[2] * displayY[0])))) + (touchY[2] * (((touchX[1] * displayY[0]) - (touchX[0] * displayY[1])))));  
+  TransMatrix[5] = CalcCoef(tmp, k);
   
   count = 0;
   do
@@ -658,18 +663,22 @@ void Wait4CoProFIFO(uint32_t room)
 
 // Sit and wait until the CoPro FIFO is empty
 // Detect operational errors and print the error and stop.
-void Wait4CoProFIFOEmpty(void)
+bool Wait4CoProFIFOEmpty(void)
 {
   uint16_t ReadReg;
+  uint16_t WriteReg;
   uint8_t ErrChar;
   uint8_t buffy[2];
+  uint8_t LoopCount = 0;
+
+  WriteReg = rd16(REG_CMD_WRITE + RAM_REG);
   do
   {
     ReadReg = rd16(REG_CMD_READ + RAM_REG);
+
     if(ReadReg == 0xFFF)
     {
-      // this is a error which would require sophistication to fix and continue but we fake it somewhat unsuccessfully
-      Log("\n");
+      Log("\nW4CPFE: ");
       uint8_t Offset = 0;
       do
       {
@@ -682,16 +691,30 @@ void Wait4CoProFIFOEmpty(void)
       Log("\n");
 
       // Eve is unhappy - needs a paddling.
-      uint32_t Patch_Add = rd32(REG_COPRO_PATCH_PTR + RAM_REG);
-      wr8(REG_CPU_RESET + RAM_REG, 1);
-      wr8(REG_CMD_READ + RAM_REG, 0);
-      wr8(REG_CMD_WRITE + RAM_REG, 0);
-      wr8(REG_CMD_DL + RAM_REG, 0);
-      wr8(REG_CPU_RESET + RAM_REG, 0);
-      wr32(REG_COPRO_PATCH_PTR + RAM_REG, Patch_Add);
-      delay(250);  // we already saw one error message and we don't need to see then 1000 times a second
+      uint16_t Patch_Add = rd16( REG_COPRO_PATCH_PTR + RAM_REG );
+      wr32( REG_CPU_RESET + RAM_REG, 1 );
+      wr32( REG_CMD_READ + RAM_REG, 0 );
+      wr32( REG_CMD_WRITE + RAM_REG, 0 );
+      wr32( REG_CMD_DL + RAM_REG, 0 );
+      wr32( REG_PCLK + RAM_REG, 0 );
+      WriteReg = FifoWriteLocation = 0;                     // reset our marker tracker variables
+      wr32( REG_CPU_RESET + RAM_REG, 0 );
+      MyDelay( 100 );
+      wr16( REG_COPRO_PATCH_PTR + RAM_REG, Patch_Add );
+
+      // If this is a BT81x and you were previously in fast flash mode, you will not be any more 
+      //  - probably need to track the state and redo fast mode here.
     }
-  }while( ReadReg != rd16(REG_CMD_WRITE + RAM_REG) );
+
+    if (LoopCount++ == 100) // 100 times around is waaay too much
+    {
+      Log("Eve stuck - W:%lu R:%lu\n", WriteReg, ReadReg);
+      return false;
+    }
+    MyDelay(2);            // normalize operation for processor speed
+  }while( ReadReg != WriteReg );
+
+  return true;
 }
 
 // Every CoPro transaction starts with enabling the SPI and sending an address
@@ -756,16 +779,33 @@ void CoProWrCmdBuf(const uint8_t *buff, uint32_t count)
 
 // Write a block of data into Eve RAM space a byte at a time.
 // Return the last written address + 1 (The next available RAM address)
-uint32_t WriteBlockRAM(uint32_t Add, const uint8_t *buff, uint32_t count)
+uint32_t WriteBlockRAM( uint32_t Add, const uint8_t *buff, uint32_t count )
 {
-  uint8_t index;
+  uint16_t index;
   uint32_t WriteAddress = Add;  // I want to return the value instead of modifying the variable in place
-  
+
   for (index = 0; index < count; index++)
   {
-    wr8(WriteAddress++, buff[index]);
+    wr8( WriteAddress++, buff[index] );
   }
   return (WriteAddress);
+}
+
+// LoadFile() ( 5.76 - CMD_FLASHREAD )
+// dest - Destination address in RAM_G.  Must be 4-byte aligned.
+// src - Source address in flash memory.  Must be 64-byte aligned.
+// num - Number of bytes to write.  Must be multiple of 4
+void LoadFile( uint32_t src, uint32_t dest, uint32_t num )
+{
+  Send_CMD( CMD_FLASHREAD );
+  Send_CMD( dest );                                                  // Address we are writing to
+  Send_CMD( src );                                                   // Address we are reading from
+  Send_CMD( num );                                                   // number of bytes to transfer
+  UpdateFIFO();                                                      // Trigger the CoProcessor to start processing commands out of the FIFO
+  Wait4CoProFIFOEmpty();                                             // wait here until the co-processor has read and executed every pending command.
+  MyDelay( 50 );  // YES OR NOT????????????????????????????????????????????????????????????
+
+  Log( "LoadFile: File Copied %ld to %ld from %ld\n", num, dest, src & 0x7FFFFF );
 }
 
 // CalcCoef - Support function for manual screen calibration function

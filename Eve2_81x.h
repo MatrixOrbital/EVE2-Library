@@ -37,8 +37,6 @@
 extern "C" {
 #endif
 
-//#include <stdint.h>              // Find integer types like "uint8_t"  
-
 #define HCMD_ACTIVE      0x00
 #define HCMD_STANDBY     0x41
 #define HCMD_SLEEP       0x42
@@ -118,6 +116,11 @@ extern "C" {
 #define CMD_CLEARCACHE       0xFFFFFF4F
 #define CMD_FLASHAPPENDF     0xFFFFFF59
 #define CMD_VIDEOSTARTF      0xFFFFFF5F
+#define CMD_ANIMSTART        0xFFFFFF53
+#define CMD_ANIMSTOP         0xFFFFFF54
+#define CMD_ANIMXY           0xFFFFFF55
+#define CMD_ANIMDRAW         0xFFFFFF56
+#define CMD_ANIMFRAME        0xFFFFFF5A
 
 #define DLSWAP_FRAME         2UL
 
@@ -337,12 +340,16 @@ extern "C" {
 #define NEAREST                    0
 #define BILINEAR                   1
 
+// Animation Parameters
+#define ANIM_HOLD                  2UL
+#define ANIM_LOOP                  1UL
+#define ANIM_ONCE                  0UL
+
 // Flash Status
 #define FLASH_STATUS_INIT          0UL
 #define FLASH_STATUS_DETACHED      1UL
 #define FLASH_STATUS_BASIC         2UL
 #define FLASH_STATUS_FULL          3UL
-
 
 // These defined "macros" are supplied by FTDI - Manufacture command bit-fields from parameters
 // FT81x Series Programmers Guide is refered to as "FT-PG"
@@ -391,6 +398,8 @@ void Cmd_Dial(uint16_t x, uint16_t y, uint16_t r, uint16_t options, uint16_t val
 void Cmd_Track(uint16_t x, uint16_t y, uint16_t w, uint16_t h, uint16_t tag);
 void Cmd_Number(uint16_t x, uint16_t y, uint16_t font, uint16_t options, uint32_t num);
 void Cmd_Gradient(uint16_t x0, uint16_t y0, uint32_t rgb0, uint16_t x1, uint16_t y1, uint32_t rgb1);
+void Cmd_AnimDraw(int8_t AnimID);
+void Cmd_AnimDrawFrame(uint32_t addr, uint16_t Xpos, uint16_t Ypos, uint8_t Frame);
 void Cmd_Button(uint16_t x, uint16_t y, uint16_t w, uint16_t h, uint16_t font, uint16_t options, const char* str);
 void Cmd_Text(uint16_t x, uint16_t y, uint16_t font, uint16_t options, const char* str);
 
@@ -411,9 +420,10 @@ void Calibrate_Manual(uint16_t Width, uint16_t Height, uint16_t V_Offset, uint16
 
 uint16_t CoProFIFO_FreeSpace(void);
 void Wait4CoProFIFO(uint32_t room);
-void Wait4CoProFIFOEmpty(void);
+bool Wait4CoProFIFOEmpty(void);
 void StartCoProTransfer(uint32_t address, uint8_t reading);
 void CoProWrCmdBuf(const uint8_t *buffer, uint32_t count);
+void LoadFile( uint32_t src, uint32_t dest, uint32_t num );
 uint32_t WriteBlockRAM(uint32_t Add, const uint8_t *buff, uint32_t count);
 int32_t CalcCoef(int32_t Q, int32_t K);
 
