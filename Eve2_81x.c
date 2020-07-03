@@ -14,18 +14,17 @@
 // forget to manually update the FIFO write pointer to account for those locations you wrote or your track
 // of the next FIFO address will fail.
 // Hint2: Resetting Eve properly is not easy.  If you opt for a power cycle instead of relying on the PD
-// line, be aware that Eve will vampire power from a logic signal on almost ANY PIN!  Tristate all SPI lines
+// line, be aware that Eve will vampire power from a logic signal on almost ANY PIN!  Tristate all SPI lines,
 // PD, etc before attempting to remove power or Eve will simply remain powered via, say, MOSI.
 
 // See the header Eve2_81x.h for a list of required functions - include them here.
 
 // Sources of abstraction - Include the hardware and software abstraction files for your target processor:
 // This list of files will contain the required functions listed in Eve2_81x.h - add and remove as required
-#include "Arduino_AL.h"        // For Arduino, see Matrix Orbital Examples for an example of this file
-//#include "RPi_AL.h"              // File function abstractions for raspberry pi
-//#include "SPI.h"                 // My raspberry pi abstractions using the BCM2835 library
-//#include "Logging.h"             // My "Log()" is defined in here for use with raspberry pi
-//#include "timer.h"               // My timer function abstractions for raspberry pi - millis(), MyDelay(), etc
+//#include "Arduino_AL.h"        // For Arduino, see Matrix Orbital Examples for an example of this file
+#include "LPC11U_AL.h"           // File function abstractions for raspberry pi
+#include "SPI.h"                 // My raspberry pi abstractions using the BCM2835 library
+#include "Logging.h"             // My "Log()" is defined in here for use with raspberry pi
 
 // This list of headers is for functionality required by this library and should not change.  Also fine for Arduino.
 #include <stdint.h>              // Find integer types like "uint8_t"  
@@ -79,6 +78,7 @@ void FT81x_Init(void)
     wr32(REG_CPU_RESET + RAM_REG, 0);
     MyDelay(100);
     wr16(REG_COPRO_PATCH_PTR + RAM_REG, Patch_Add);
+    Log( "Eve Needed Whacking\n" );
   }
   
   // turn off screen output during startup
@@ -519,10 +519,61 @@ void Cmd_Scale(uint32_t sx, uint32_t sy)
   Send_CMD(sy);
 }
 
-void Cmd_Flash_Fast(void)
+bool FlashAttach( void )
 {
-  Send_CMD(CMD_FLASHFAST);
-  Send_CMD(0);
+  Send_CMD( CMD_FLASHATTACH );
+  UpdateFIFO();                                                        // Trigger the CoProcessor to start processing commands out of the FIFO
+  Wait4CoProFIFOEmpty();                                               // wait here until the coprocessor has read and executed every pending command.
+
+  uint8_t FlashStatus = rd8( REG_FLASH_STATUS + RAM_REG );
+  if (FlashStatus != FLASH_STATUS_BASIC)
+  {
+    Log( "FlashAttach: NOT attached\n" );
+    return false;
+  }
+  Log( "FlashAttach: Attached\n" );
+  return true;
+}
+
+bool FlashDetach( void )
+{
+  Send_CMD( CMD_FLASHDETACH );
+  UpdateFIFO();                                                        // Trigger the CoProcessor to start processing commands out of the FIFO
+  Wait4CoProFIFOEmpty();                                               // wait here until the coprocessor has read and executed every pending command.
+
+  uint8_t FlashStatus = rd8( REG_FLASH_STATUS + RAM_REG );
+  if (FlashStatus != FLASH_STATUS_DETACHED)
+  {
+    Log( "FlashDetach: NOT detached\n" );
+    return false;
+  }
+  Log( "FlashDetach: Detached\n" );
+  return true;
+}
+
+bool FlashFast( void )
+{
+  Cmd_Flash_Fast();
+  UpdateFIFO();                                                        // Trigger the CoProcessor to start processing commands out of the FIFO
+  Wait4CoProFIFOEmpty();                                               // wait here until the coprocessor has read and executed every pending command.
+  
+  uint8_t FlashStatus = rd8( REG_FLASH_STATUS + RAM_REG );
+  if (FlashStatus != FLASH_STATUS_FULL)
+  {
+    Log( "FlashFast: NOT full mode\n" );
+    return false;
+  }
+  Log( "FlashFast: Full speed ahead\n" );
+  return true;
+}
+
+bool FlashErase( void )
+{
+  Log( "FlashErase: Erasing Flash\n" );
+  Send_CMD( CMD_FLASHERASE );
+  UpdateFIFO();                                                        // Trigger the CoProcessor to start processing commands out of the FIFO
+  Wait4CoProFIFOEmpty();                                               // wait here until the coprocessor has read and executed every pending command.
+  Log( "FlashErase: Finished Erase\n" );
 }
 
 // *** Calibrate Touch Digitizer - FT81x Series Programmers Guide Section 5.52 ***********************************
@@ -579,7 +630,7 @@ void Calibrate_Manual(uint16_t Width, uint16_t Height, uint16_t V_Offset, uint16
     UpdateFIFO();                                                                 // Trigger the CoProcessor to start processing commands out of the FIFO
     Wait4CoProFIFOEmpty();                                                        // wait here until the coprocessor has read and executed every pending command.
 
-		while(1)
+    while(1)
     {
       touchValue = rd32(REG_TOUCH_DIRECT_XY + RAM_REG); 	// Read for any new touch tag inputs
 			

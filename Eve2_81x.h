@@ -414,7 +414,10 @@ void Cmd_Rotate(uint32_t a);
 void Cmd_SetRotate(uint32_t rotation);
 void Cmd_Scale(uint32_t sx, uint32_t sy);
 void Cmd_Calibrate(uint32_t result);
-void Cmd_Flash_Fast(void);
+bool FlashAttach( void );
+bool FlashDetach( void );
+bool FlashFast( void );
+bool FlashErase( void );
 
 void Calibrate_Manual(uint16_t Width, uint16_t Height, uint16_t V_Offset, uint16_t H_Offset);
 
