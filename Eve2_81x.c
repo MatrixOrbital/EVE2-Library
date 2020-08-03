@@ -553,7 +553,8 @@ bool FlashDetach( void )
 
 bool FlashFast( void )
 {
-  Cmd_Flash_Fast();
+  Send_CMD(CMD_FLASHFAST);
+  Send_CMD(0);
   UpdateFIFO();                                                        // Trigger the CoProcessor to start processing commands out of the FIFO
   Wait4CoProFIFOEmpty();                                               // wait here until the coprocessor has read and executed every pending command.
   
