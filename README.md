@@ -2,10 +2,10 @@ A C library for a [Matrix Orbital EVE2, EVE3 or EVE4](https://www.matrixorbital.
 
 ![alt text](https://www.matrixorbital.com/image/cache/catalog/products/EVE/EVE3-43G-300x300.jpg)
 
+- [Matrix Orbital Support Forums](http://www.lcdforums.com/forums/viewforum.php?f=45)
 - [Matrix Orbital EVE SPI TFT display information](https://www.matrixorbital.com/ftdi-eve)
 - [EVE3 BT815 & BT816 Programming Guide](https://brtchip.com/wp-content/uploads/Support/Documentation/Programming_Guides/ICs/EVE/BRT_AN_033_BT81X_Series_Programming_Guide.pdf)
 - [EVE Tool Chain](https://brtchip.com/eve-toolchains/)
-- [Support Forums](http://www.lcdforums.com/forums/viewforum.php?f=45)
 
 Supports
   - EVE2 FT812 & FT813
