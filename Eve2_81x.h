@@ -1,6 +1,10 @@
 #ifndef __EVE81X_H
 #define __EVE81X_H
-
+#include <stdint.h>
+#include <stdlib.h>
+#include <stdio.h>
+#include <string.h>
+#include <stdbool.h>
 // =====================================================================================
 // Required Functions - Hardware driver or otherwise environment specific. Abstracted  |
 // and found in ArduinoAL.h or whatever the abstraction layer is called in your world. |
@@ -36,6 +40,8 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+//#include <stdint.h>              // Find integer types like "uint8_t"  
 
 #define HCMD_ACTIVE      0x00
 #define HCMD_STANDBY     0x41
@@ -76,7 +82,7 @@ extern "C" {
 #define CMD_MEMSET           0xFFFFFF1B
 #define CMD_MEMWRITE         0xFFFFFF1A
 #define CMD_MEMZERO          0xFFFFFF1C
-#define CMD_NUMBER           0xFFFFFF38
+#define CMD_NUMBER           0xFFFFFF2E
 #define CMD_PLAYVIDEO        0xFFFFFF3A
 #define CMD_PROGRESS         0xFFFFFF0F
 #define CMD_REGREAD          0xFFFFFF19
@@ -100,7 +106,7 @@ extern "C" {
 #define CMD_TRANSLATE        0xFFFFFF27
 #define CMD_VIDEOFRAME       0xFFFFFF41
 #define CMD_VIDEOSTART       0xFFFFFF40
-
+#define CMD_ROMFONT          0xFFFFFF3F
 // BT81X COMMANDS 
 #define CMD_FLASHERASE       0xFFFFFF44
 #define CMD_FLASHWRITE       0xFFFFFF45
@@ -114,13 +120,14 @@ extern "C" {
 #define CMD_FLASHSPIRX       0xFFFFFF4D
 #define CMD_FLASHSOURCE      0xFFFFFF4E
 #define CMD_CLEARCACHE       0xFFFFFF4F
+#define CMD_ANIMDRAW         4294967126UL
+#define CMD_ANIMFRAME        4294967130UL
+#define CMD_ANIMSTART        4294967123UL
+#define CMD_ANIMSTOP         4294967124UL
+#define CMD_ANIMXY           4294967125UL 
+
 #define CMD_FLASHAPPENDF     0xFFFFFF59
 #define CMD_VIDEOSTARTF      0xFFFFFF5F
-#define CMD_ANIMSTART        0xFFFFFF53
-#define CMD_ANIMSTOP         0xFFFFFF54
-#define CMD_ANIMXY           0xFFFFFF55
-#define CMD_ANIMDRAW         0xFFFFFF56
-#define CMD_ANIMFRAME        0xFFFFFF5A
 
 #define DLSWAP_FRAME         2UL
 
@@ -144,6 +151,10 @@ extern "C" {
 #define OPT_RIGHTX           2048UL
 #define OPT_SIGNED           256UL
 #define OPT_SOUND            32UL
+
+#define ANIM_HOLD            2UL
+#define ANIM_LOOP            1UL
+#define ANIM_ONCE            0UL
 
 // Definitions for FT8xx co processor command buffer
 #define FT_DL_SIZE           (8*1024)  // 8KB Display List buffer size
@@ -265,6 +276,7 @@ extern "C" {
 #define REG_TRACKER_4             0x7010
 #define REG_MEDIAFIFO_READ        0x7014
 #define REG_MEDIAFIFO_WRITE       0x7018
+#define REG_PLAY_CONTROL          0x714E
 
 // Flash related registers
 #define REG_FLASH_STATUS          0x5F0
@@ -340,22 +352,18 @@ extern "C" {
 #define NEAREST                    0
 #define BILINEAR                   1
 
-// Animation Parameters
-#define ANIM_HOLD                  2UL
-#define ANIM_LOOP                  1UL
-#define ANIM_ONCE                  0UL
-
 // Flash Status
 #define FLASH_STATUS_INIT          0UL
 #define FLASH_STATUS_DETACHED      1UL
 #define FLASH_STATUS_BASIC         2UL
 #define FLASH_STATUS_FULL          3UL
 
+
 // These defined "macros" are supplied by FTDI - Manufacture command bit-fields from parameters
 // FT81x Series Programmers Guide is refered to as "FT-PG"
 #define CLEAR(c,s,t) ((38UL<<24)|(((c)&1UL)<<2)|(((s)&1UL)<<1)|(((t)&1UL)<<0))                                                                                           // CLEAR - FT-PG Section 4.21
 #define CLEAR_COLOR_RGB(red,green,blue) ((2UL<<24)|(((red)&255UL)<<16)|(((green)&255UL)<<8)|(((blue)&255UL)<<0))                                                         // CLEAR_COLOR_RGB - FT-PG Section 4.23
-#define COLOR_RGB(red,green,blue) ((4UL<<24)|(((red)&255UL)<<16)|(((green)&255UL)<<8)|(((blue)&255UL)<<0))                                                               // COLOR_RGB - FT-PG Section 4.28
+#define COLOR_RGB(red,green,blue)       ((4UL<<24)|(((red)&255UL)<<16)|(((green)&255UL)<<8)|(((blue)&255UL)<<0))                                                               // COLOR_RGB - FT-PG Section 4.28
 #define VERTEX2II(x,y,handle,cell) ((2UL<<30)|(((x)&511UL)<<21)|(((y)&511UL)<<12)|(((handle)&31UL)<<7)|(((cell)&127UL)<<0))                                              // VERTEX2II - FT-PG Section 4.48
 #define VERTEX2F(x,y) ((1UL<<30)|(((x)&32767UL)<<15)|(((y)&32767UL)<<0))                                                                                                 // VERTEX2F - FT-PG Section 4.47
 #define CELL(cell) ((6UL<<24)|(((cell)&127UL)<<0))                                                                                                                       // CELL - FT-PG Section 4.20
@@ -365,6 +373,7 @@ extern "C" {
 #define BITMAP_SIZE(filter,wrapx,wrapy,width,height) ((8UL<<24)|(((filter)&1UL)<<20)|(((wrapx)&1UL)<<19)|(((wrapy)&1UL)<<18)|(((width)&511UL)<<9)|(((height)&511UL)<<0)) // BITMAP_SIZE - FT-PG Section 4.09
 #define TAG(s) ((3UL<<24)|(((s)&255UL)<<0))                                                                                                                              // TAG - FT-PG Section 4.43
 #define POINT_SIZE(sighs) ((13UL<<24)|(((sighs)&8191UL)<<0))                                                                                                             // POINT_SIZE - FT-PG Section 4.36
+#define LINE_WIDTH(width) ((14UL<<24)|(((width)&8191UL)<<0))                                                                                                             // POINT_SIZE - FT-PG Section 4.36
 #define BEGIN(PrimitiveTypeRef) ((31UL<<24)|(((PrimitiveTypeRef)&15UL)<<0))                                                                                              // BEGIN - FT-PG Section 4.05
 #define END() ((33UL<<24))                                                                                                                                               // END - FT-PG Section 4.30
 #define DISPLAY() ((0UL<<24))                                                                                                                                            // DISPLAY - FT-PG Section 4.29
@@ -376,8 +385,9 @@ extern "C" {
 extern uint16_t FifoWriteLocation;
 
 // Function Prototypes
-void FT81x_Init(void);
+void FT81x_Init(int display, int board, int touch);
 void Eve_Reset(void);
+void Cap_Touch_Upload(void);
 
 void HostCommand(uint8_t HostCommand); 
 void wr32(uint32_t address, uint32_t parameter);
@@ -398,8 +408,6 @@ void Cmd_Dial(uint16_t x, uint16_t y, uint16_t r, uint16_t options, uint16_t val
 void Cmd_Track(uint16_t x, uint16_t y, uint16_t w, uint16_t h, uint16_t tag);
 void Cmd_Number(uint16_t x, uint16_t y, uint16_t font, uint16_t options, uint32_t num);
 void Cmd_Gradient(uint16_t x0, uint16_t y0, uint32_t rgb0, uint16_t x1, uint16_t y1, uint32_t rgb1);
-void Cmd_AnimDraw(int8_t AnimID);
-void Cmd_AnimDrawFrame(uint32_t addr, uint16_t Xpos, uint16_t Ypos, uint8_t Frame);
 void Cmd_Button(uint16_t x, uint16_t y, uint16_t w, uint16_t h, uint16_t font, uint16_t options, const char* str);
 void Cmd_Text(uint16_t x, uint16_t y, uint16_t font, uint16_t options, const char* str);
 
@@ -414,21 +422,34 @@ void Cmd_Rotate(uint32_t a);
 void Cmd_SetRotate(uint32_t rotation);
 void Cmd_Scale(uint32_t sx, uint32_t sy);
 void Cmd_Calibrate(uint32_t result);
-bool FlashAttach( void );
-bool FlashDetach( void );
-bool FlashFast( void );
-bool FlashErase( void );
+void Cmd_Flash_Fast(void);
+
+void Cmd_AnimStart(int32_t ch, uint32_t aoptr, uint32_t loop);
+void Cmd_AnimStop(int32_t ch);
+void Cmd_AnimXY(int32_t ch, int16_t x, int16_t y);
+void Cmd_AnimDraw(int32_t ch);
+void Cmd_AnimDrawFrame(int16_t x, int16_t y, uint32_t aoptr, uint32_t frame);
 
 void Calibrate_Manual(uint16_t Width, uint16_t Height, uint16_t V_Offset, uint16_t H_Offset);
 
 uint16_t CoProFIFO_FreeSpace(void);
 void Wait4CoProFIFO(uint32_t room);
-bool Wait4CoProFIFOEmpty(void);
+void Wait4CoProFIFOEmpty(void);
 void StartCoProTransfer(uint32_t address, uint8_t reading);
 void CoProWrCmdBuf(const uint8_t *buffer, uint32_t count);
-void LoadFile( uint32_t src, uint32_t dest, uint32_t num );
 uint32_t WriteBlockRAM(uint32_t Add, const uint8_t *buff, uint32_t count);
 int32_t CalcCoef(int32_t Q, int32_t K);
+uint32_t Display_Width();
+uint32_t Display_Height();
+uint8_t Display_Touch();
+uint32_t Display_HOffset();
+uint32_t Display_VOffset();
+
+/* Flash commands */
+bool FlashAttach(void);
+bool FlashDetach(void);
+bool FlashFast(void);
+bool FlashErase(void);
 
 #ifdef __cplusplus
 }
