@@ -1,133 +1,446 @@
 // Eve2 Processor Agnostic Library (Condensed)
-
+//
 // This "library" consists of the files "Eve2_81x.c" and "Eve2_81x.h".
 //
 // In persuit of the common goal of simplicity and understandability I find that I am unable to
 // make function prototypes that match Bridgetek example code.  I draw the line between the 
-// Eve and all other hardware. The library is "clean" and includes no abstraction at all.
+// Eve and all other hardware. The library is "clean" and includes no abstraction at all, unlike 
+// much of the example code on the Internet which is sort of application and abstraction mixed 
+// together in a confusing abuse of my eye-holes.  
 // My intent is to be as straight forward and understandable as possible, so while function 
 // names and parameter lists are different than Bridgetek code examples, they should be easily 
 // recognizable.  I have also made every attempt to reference Bridgetek documentation against 
-// the code to act as a translation to help in understanding - sorry when those references get stale.
+// the code to act as a translation to help in understanding.
+
+// Notes on the operation of the Eve command processing engine - THE FIFO
 //
-// Hint: It is easy to manufacture your own "CoProcessor command" out of, say wr32() calls, but don't
-// forget to manually update the FIFO write pointer to account for those locations you wrote or your track
-// of the next FIFO address will fail.
-// Hint2: Resetting Eve properly is not easy.  If you opt for a power cycle instead of relying on the PD
-// line, be aware that Eve will vampire power from a logic signal on almost ANY PIN!  Tristate all SPI lines,
-// PD, etc before attempting to remove power or Eve will simply remain powered via, say, MOSI.
+// First be aware that the FTDI documentation variously refers to you as "User", "MCU", "Host".
+// 
+// The FIFO, like all FIFO's needs pointers to indicate the starting address of buffered data and
+// the end address of buffered data.  There is wrapping involved, but the basic idea is clear.
+// Eve takes data into it's FIFO using a fully defined write operation to a memory address - that 
+// is, you need to take care of the wrapping - to you, it is not a FIFO - it is a piece of memory.
+// Eve keeps track of it's own read address location, but relies on you to write the address
+// of the end of buffered data.
+// 
+// So as commands are loaded into RAM - into the FIFO space - Eve will do nothing in response.
+// Eve is happy to take your data and store it for you while it sits with it's read address and 
+// write address set to the same value.  Once the commands are loaded, the next available address
+// is manually written (by you) to the register in which Eve stores the FIFO write pointer
+// (REG_CMD_WRITE).  
+//
+// Following this, Eve discovers that the addresses are different and begins processing commands while
+// updating it's own read pointer until the read and write pointers are the same.
+// 
+// Be aware that Eve stores only the offset into the "FIFO" as 16 bits, so any use of the offset 
+// requires adding the base address (RAM_CMD 0x308000) to the resultant 32 bit value.
 
-// See the header Eve2_81x.h for a list of required functions - include them here.
-
-// Sources of abstraction - Include the hardware and software abstraction files for your target processor:
-// This list of files will contain the required functions listed in Eve2_81x.h - add and remove as required
-//#include "Arduino_AL.h"        // For Arduino, see Matrix Orbital Examples for an example of this file
-#include "LPC11U_AL.h"           // File function abstractions for raspberry pi
-#include "SPI.h"                 // My raspberry pi abstractions using the BCM2835 library
-#include "Logging.h"             // My "Log()" is defined in here for use with raspberry pi
-
-// This list of headers is for functionality required by this library and should not change.  Also fine for Arduino.
+#include <stdio.h>
 #include <stdint.h>              // Find integer types like "uint8_t"  
-#include <stdbool.h>             // bool
-#include <stdlib.h>              // calloc(), free()
-#include <string.h>              // strlen()
-#include "MatrixEve2Conf.h"      // Header for this EVE2 Display configuration settings
+#include <stdbool.h>			 // for true/false
 #include "Eve2_81x.h"            // Header for this file with prototypes, defines, and typedefs
+#include "MatrixEve2Conf.h"      // Header for display selection 
+#include "hw_api.h"				 // for spi abstraction 
+
+#define WorkBuffSz 512
+#define Log printf
 
 // Global Variables 
-uint16_t FifoWriteLocation = 0;  // Don't allow this variable to get out of synch - be careful about manually constructing FIFO commands
+uint16_t FifoWriteLocation = 0;
+char LogBuf[WorkBuffSz];         // The singular universal data array used for all things including logging
+
+static uint32_t Width;
+static uint32_t Height;
+static uint32_t HOffset;
+static uint32_t VOffset;
+static uint8_t Touch;
+
+uint32_t Display_Width()
+{
+	return Width;
+}
+
+uint32_t Display_Height()
+{
+	return Height;
+}
+
+uint8_t Display_Touch()
+{
+	return Touch;
+}
+
+uint32_t Display_HOffset()
+{
+	return HOffset;
+}
+uint32_t Display_VOffset()
+{
+	return VOffset;
+}
+
+
+
 
 // Call this function once at powerup to reset and initialize the Eve chip
-void FT81x_Init(void)
-{  
-  uint32_t Ready = false;
-  
-  Eve_Reset(); // Hard reset of the Eve chip
+int FT81x_Init(int display, int board, int touch)
+{
+	uint32_t Ready = false;
+	int DWIDTH;
+	int DHEIGHT;
+	int PIXVOFFSET;
+	int PIXHOFFSET;
+	int HCYCLE;
+	int HOFFSET;
+	int HSYNC0;
+	int HSYNC1;
+	int VCYCLE;
+	int VOFFSET;
+	int VSYNC0;
+	int VSYNC1;
+	int PCLK;
+	int SWIZZLE;
+	int PCLK_POL;
+	int HSIZE;
+	int VSIZE;
+	int CSPREAD;
+	int DITHER;
 
-  // Wakeup Eve
-  HostCommand(HCMD_CLKEXT);
-  HostCommand(HCMD_ACTIVE);
-  MyDelay(300);
-  
-  do
-  {
-    Ready = Cmd_READ_REG_ID();
-  }while (!Ready);
+	switch (display)
+	{
+	case  DISPLAY_70:
+		DWIDTH = 800;
+		DHEIGHT = 480;
+		PIXVOFFSET = 0;
+		PIXHOFFSET = 0;
+		HCYCLE = 928;
+		HOFFSET = 88;
+		HSYNC0 = 0;
+		HSYNC1 = 48;
+		VCYCLE = 525;
+		VOFFSET = 32;
+		VSYNC0 = 0;
+		VSYNC1 = 3;
+		PCLK = 2;
+		SWIZZLE = 0;
+		PCLK_POL = 1;
+		HSIZE = 800;
+		VSIZE = 480;
+		CSPREAD = 0;
+		DITHER = 1;		
+		break;
+	case DISPLAY_50:
+		DWIDTH = 800;
+		DHEIGHT = 480;
+		PIXVOFFSET = 0;
+		PIXHOFFSET = 0;
+		HCYCLE = 928;
+		HOFFSET = 88;
+		HSYNC0 = 0;
+		HSYNC1 = 48;
+		VCYCLE = 525;
+		VOFFSET = 32;
+		VSYNC0 = 0;
+		VSYNC1 = 3;
+		PCLK = 2;
+		SWIZZLE = 0;
+		PCLK_POL = 1;
+		HSIZE = 800;
+		VSIZE = 480;
+		CSPREAD = 0;
+		DITHER = 1;
+		break;
+	case DISPLAY_43:
+		DWIDTH = 480;
+		DHEIGHT = 272;
+		PIXVOFFSET = 0;
+		PIXHOFFSET = 0;
+		HCYCLE = 548;
+		HOFFSET = 43;
+		HSYNC0 = 0;
+		HSYNC1 = 41;
+		VCYCLE = 292;
+		VOFFSET = 12;
+		VSYNC0 = 0;
+		VSYNC1 = 10;
+		PCLK = 5;
+		SWIZZLE = 0;
+		PCLK_POL = 1;
+		HSIZE = 480;
+		VSIZE = 272;
+		CSPREAD = 1;
+		DITHER = 1;
+		break;
+	case DISPLAY_39:
+		DWIDTH = 480;
+		DHEIGHT = 128;
+		PIXVOFFSET = 0;
+		PIXHOFFSET = 0;
+		HCYCLE = 524;
+		HOFFSET = 16;
+		HSYNC1 = 44;
+		HSYNC0 = 0;
+		VCYCLE = 288;
+		VOFFSET = 12;
+		VSYNC1 = 8;
+		VSYNC0 = 7;
+		PCLK = 5;
+		SWIZZLE = 0;
+		PCLK_POL = 1;
+		HSIZE = 480;
+		VSIZE = 272;
+		CSPREAD = 1;
+		DITHER = 1;
+		break;
+	case DISPLAY_38:
+		DWIDTH = 480;
+		DHEIGHT = 116;
+		PIXVOFFSET = 10;
+		PIXHOFFSET = 0;
+		HCYCLE = 524;
+		HOFFSET = 43;
+		HSYNC0 = 0;
+		HSYNC1 = 41;
+		VCYCLE = 292;
+		VOFFSET = 12;
+		VSYNC0 = 152;
+		VSYNC1 = 10;
+		PCLK = 5;
+		SWIZZLE = 0;
+		PCLK_POL = 1;
+		HSIZE = 480;
+		VSIZE = 272;
+		CSPREAD = 1;
+		DITHER = 1;
+		break;
+	case DISPLAY_35:
+		DWIDTH = 320;
+		DHEIGHT = 240;
+		PIXVOFFSET = 0;
+		PIXHOFFSET = 0;
+		HCYCLE = 408;
+		HOFFSET = 68;
+		HSYNC0 = 0;
+		HSYNC1 = 10;
+		VCYCLE = 262;
+		VOFFSET = 18;
+		VSYNC0 = 0;
+		VSYNC1 = 2;
+		PCLK = 8;
+		SWIZZLE = 0;
+		PCLK_POL = 0;
+		HSIZE = 320;
+		VSIZE = 240;
+		CSPREAD = 1;
+		DITHER = 1;
+		break;
+	case DISPLAY_29:
+		DWIDTH = 320;
+		DHEIGHT = 102;
+		PIXVOFFSET = 0;
+		PIXHOFFSET = 0;
+		HCYCLE = 408;
+		HOFFSET = 70;
+		HSYNC0 = 0;
+		HSYNC1 = 10;
+		VCYCLE = 262;
+		VOFFSET = 156;
+		VSYNC0 = 0;
+		VSYNC1 = 2;
+		PCLK = 8;
+		SWIZZLE = 0;
+		PCLK_POL = 0;
+		HSIZE = 320;
+		VSIZE = 102;
+		CSPREAD = 1;
+		DITHER = 1;
+		break;
+	case DISPLAY_40:
+		DWIDTH = 720;
+		DHEIGHT = 720;
+		PIXVOFFSET = 0;
+		PIXHOFFSET = 0;
+		HCYCLE = 812;
+		HOFFSET = 91; 
+		HSYNC0 = 46;
+		HSYNC1 = 48;
+		VCYCLE = 756;
+		VOFFSET = 35; 
+		VSYNC0 = 16;
+		VSYNC1 = 18;
+		PCLK = 2;
+		SWIZZLE = 0;
+		PCLK_POL = 1;
+		HSIZE = 720;
+		VSIZE = 720;
+		CSPREAD = 0;
+		DITHER = 0;
+		break;
+	case DISPLAY_101:
+		DWIDTH = 1280;
+		DHEIGHT = 800;
+		PIXVOFFSET = 0;
+		PIXHOFFSET = 0;
+		HCYCLE = 1440;
+		HOFFSET = 158;
+		HSYNC0 = 78;
+		HSYNC1 = 80;
+		VCYCLE = 823;
+		VOFFSET = 22;
+		VSYNC0 = 11;
+		VSYNC1 = 12;
+		PCLK = 1;
+		SWIZZLE = 0;
+		PCLK_POL = 0;
+		HSIZE = 1280;
+		VSIZE = 800;
+		CSPREAD = 0;
+		DITHER = 1;
+		break;
+	default:
+		printf("Unknown display type\n");
+		return 0;
+		break;
+	}
+	Width = DWIDTH;
+	Height = DHEIGHT;
+	HOffset = PIXHOFFSET;
+	VOffset = PIXVOFFSET;
+	Touch = touch;
+	Eve_Reset(); // Hard reset of the Eve chip
 
-  Log("Eve now ACTIVE\n");         //
-  
-  Ready = rd32(REG_CHIP_ID);
-  uint16_t ValH = Ready >> 16;
-  uint16_t ValL = Ready & 0xFFFF;
-  Log("Chip ID = 0x%04x%04x\n", ValH, ValL);
+	// Wakeup Eve	
+	if (board >= BOARD_EVE3)
+	{
+		HostCommand(HCMD_CLKEXT);
+	}	
+	HostCommand(HCMD_ACTIVE);
+	HAL_Delay(300);
 
-  wr32(REG_FREQUENCY + RAM_REG, 0x3938700); // Configure the system clock to 60MHz
+	do
+	{
+		Ready = Cmd_READ_REG_ID();
+	} while (!Ready);
 
-  // Before we go any further with Eve, it is a good idea to check to see if it is wigging out about something 
-  // that happened before the last reset.  If Eve has just done a power cycle, this would be unnecessary.
-  if( rd16(REG_CMD_READ + RAM_REG) == 0xFFF )
-  {
-    // Eve is unhappy - needs a paddling.
-    uint16_t Patch_Add = rd16(REG_COPRO_PATCH_PTR + RAM_REG);
-    wr32(REG_CPU_RESET + RAM_REG, 1);
-    wr32(REG_CMD_READ + RAM_REG, 0);
-    wr32(REG_CMD_WRITE + RAM_REG, 0);
-    wr32(REG_CMD_DL + RAM_REG, 0);
-    wr32(REG_PCLK + RAM_REG, 0);
-    FifoWriteLocation = 0;                    // reset our marker tracker variables
-    wr32(REG_CPU_RESET + RAM_REG, 0);
-    MyDelay(100);
-    wr16(REG_COPRO_PATCH_PTR + RAM_REG, Patch_Add);
-    Log( "Eve Needed Whacking\n" );
-  }
-  
-  // turn off screen output during startup
-  wr8(REG_GPIOX + RAM_REG, 0);             // Set REG_GPIOX to 0 to turn off the LCD DISP signal
-  wr8(REG_PCLK + RAM_REG, 0);              // Pixel Clock Output disable
+	//  Log("Eve now ACTIVE\n");         //
 
-  // load parameters of the physical screen to the Eve
-  // All of these registers are 32 bits, but most bits are reserved, so only write what is actually used
-  wr16(REG_HCYCLE + RAM_REG, HCYCLE);         // Set H_Cycle to 548
-  wr16(REG_HOFFSET + RAM_REG, HOFFSET);       // Set H_Offset to 43
-  wr16(REG_HSYNC0 + RAM_REG, HSYNC0);         // Set H_SYNC_0 to 0
-  wr16(REG_HSYNC1 + RAM_REG, HSYNC1);         // Set H_SYNC_1 to 41
-  wr16(REG_VCYCLE + RAM_REG, VCYCLE);         // Set V_Cycle to 292
-  wr16(REG_VOFFSET + RAM_REG, VOFFSET);       // Set V_OFFSET to 12
-  wr16(REG_VSYNC0 + RAM_REG, VSYNC0);         // Set V_SYNC_0 to 0
-  wr16(REG_VSYNC1 + RAM_REG, VSYNC1);         // Set V_SYNC_1 to 10
-  wr8(REG_SWIZZLE + RAM_REG, SWIZZLE);        // Set SWIZZLE to 0
-  wr8(REG_PCLK_POL + RAM_REG, PCLK_POL);      // Set PCLK_POL to 1
-  wr16(REG_HSIZE + RAM_REG, HSIZE);           // Set H_SIZE to 480
-  wr16(REG_VSIZE + RAM_REG, VSIZE);           // Set V_SIZE to 272
-  wr8(REG_CSPREAD + RAM_REG, CSPREAD);        // Set CSPREAD to 1    (32 bit register - write only 8 bits)
-  wr8(REG_DITHER + RAM_REG, DITHER);          // Set DITHER to 1     (32 bit register - write only 8 bits)
+	Ready = rd32(REG_CHIP_ID);
+	uint16_t ValH = Ready >> 16;
+	uint16_t ValL = Ready & 0xFFFF;
+	Log("Chip ID = 0x%04x%04x\n", ValH, ValL);
 
-  // configure touch & audio
+	
+	if (display == DISPLAY_101)  
+	{
+		wr32(REG_FREQUENCY + RAM_REG, 80000000); // Configure the system clock to 80MHz
+	}
+	else
+	{
+		wr32(REG_FREQUENCY + RAM_REG, 60000000); // Configure the system clock to 60MHz
+	}
+	// Before we go any further with Eve, it is a good idea to check to see if she is wigging out about something 
+	// that happened before the last reset.  If Eve has just done a power cycle, this would be unnecessary.
+	if (rd16(REG_CMD_READ + RAM_REG) == 0xFFF)
+	{
+		// Eve is unhappy - needs a paddling.
+		uint32_t Patch_Add = rd32(REG_COPRO_PATCH_PTR + RAM_REG);
+		wr8(REG_CPU_RESET + RAM_REG, 1);
+		wr16(REG_CMD_READ + RAM_REG, 0);
+		wr16(REG_CMD_WRITE + RAM_REG, 0);
+		wr16(REG_CMD_DL + RAM_REG, 0);
+		wr8(REG_CPU_RESET + RAM_REG, 0);
+		wr32(REG_COPRO_PATCH_PTR + RAM_REG, Patch_Add);
+	}
+
+	// turn off screen output during startup
+	wr8(REG_GPIOX + RAM_REG, 0);             // Set REG_GPIOX to 0 to turn off the LCD DISP signal
+	wr8(REG_PCLK + RAM_REG, 0);              // Pixel Clock Output disable
+
+	// load parameters of the physical screen to the Eve
+	// All of these registers are 32 bits, but most bits are reserved, so only write what is actually used
+	wr16(REG_HCYCLE + RAM_REG, HCYCLE);         // Set H_Cycle to 548
+	wr16(REG_HOFFSET + RAM_REG, HOFFSET);       // Set H_Offset to 43
+	wr16(REG_HSYNC0 + RAM_REG, HSYNC0);         // Set H_SYNC_0 to 0
+	wr16(REG_HSYNC1 + RAM_REG, HSYNC1);         // Set H_SYNC_1 to 41
+	wr16(REG_VCYCLE + RAM_REG, VCYCLE);         // Set V_Cycle to 292
+	wr16(REG_VOFFSET + RAM_REG, VOFFSET);       // Set V_OFFSET to 12
+	wr16(REG_VSYNC0 + RAM_REG, VSYNC0);         // Set V_SYNC_0 to 0
+	wr16(REG_VSYNC1 + RAM_REG, VSYNC1);         // Set V_SYNC_1 to 10
+	wr8(REG_SWIZZLE + RAM_REG, SWIZZLE);        // Set SWIZZLE to 0
+	wr8(REG_PCLK_POL + RAM_REG, PCLK_POL);      // Set PCLK_POL to 1
+	wr16(REG_HSIZE + RAM_REG, HSIZE);           // Set H_SIZE to 480
+	wr16(REG_VSIZE + RAM_REG, VSIZE);           // Set V_SIZE to 272
+	wr8(REG_CSPREAD + RAM_REG, CSPREAD);        // Set CSPREAD to 1    (32 bit register - write only 8 bits)
+	wr8(REG_DITHER + RAM_REG, DITHER);          // Set DITHER to 1     (32 bit register - write only 8 bits)
+
+	// configure touch & audio
+	if (touch == TOUCH_TPR)
+	{
+		wr16(REG_TOUCH_CONFIG + RAM_REG, 0x8381);
+	}
+	else if (touch == TOUCH_TPC)
+	{
+		if (display == DISPLAY_40)
+			wr16(REG_TOUCH_CONFIG + RAM_REG, 0x480); // FT6336U
+		else 
+			wr16(REG_TOUCH_CONFIG + RAM_REG, 0x5d0);  
+		if (board == BOARD_EVE2)
+		{
+			Cap_Touch_Upload();
+		}
+	}
+
   wr16(REG_TOUCH_RZTHRESH + RAM_REG, 1200);          // set touch resistance threshold
   wr8(REG_TOUCH_MODE + RAM_REG, 0x02);               // set touch on: continous - this is default
   wr8(REG_TOUCH_ADC_MODE + RAM_REG, 0x01);           // set ADC mode: differential - this is default
   wr8(REG_TOUCH_OVERSAMPLE + RAM_REG, 15);           // set touch oversampling to max
 
-  wr16(REG_GPIOX_DIR + RAM_REG, 0x8000);             // Set Disp GPIO Direction 
-  wr16(REG_GPIOX + RAM_REG, 0x8000);                 // Enable Disp (if used)
+  wr16(REG_GPIOX_DIR + RAM_REG, 0x8000 | (1<<3));             // Set Disp GPIO Direction 
+  wr16(REG_GPIOX + RAM_REG, 0x8000 | (1<<3));                 // Enable Disp (if used)
 
   wr16(REG_PWM_HZ + RAM_REG, 0x00FA);                // Backlight PWM frequency
-  wr8(REG_PWM_DUTY + RAM_REG, 0x00);                 // Backlight PWM duty (off)   
+  wr8(REG_PWM_DUTY + RAM_REG, 128);                  // Backlight PWM duty (on)   
 
   // write first display list (which is a clear and blank screen)
   wr32(RAM_DL+0, CLEAR_COLOR_RGB(0,0,0));
   wr32(RAM_DL+4, CLEAR(1,1,1));
   wr32(RAM_DL+8, DISPLAY());
   wr8(REG_DLSWAP + RAM_REG, DLSWAP_FRAME);          // swap display lists
-  wr8(REG_PCLK + RAM_REG, 5);                       // after this display is visible on the LCD
-
-  Log("First screen written\n");
+  wr8(REG_PCLK + RAM_REG, PCLK);                       // after this display is visible on the LCD
+  return 1;
 }
 
 // Reset Eve chip via the hardware PDN line
 void Eve_Reset(void)
 {
-  Eve_Reset_HW();
+  HAL_Eve_Reset_HW();
+}
+
+// Upload Goodix Calibration file
+void Cap_Touch_Upload(void)
+{
+#include "touch_cap_811.h"	
+	//---Goodix911 Configuration from AN336
+	//Load the TOUCH_DATA_U8 or TOUCH_DATA_U32 array from file “touch_cap_811.h” via the FT81x command buffer RAM_CMD
+	uint8_t CTOUCH_CONFIG_DATA_G911[] = { TOUCH_DATA_U8 };
+	CoProWrCmdBuf(CTOUCH_CONFIG_DATA_G911, TOUCH_DATA_LEN);
+	//Execute the commands till completion
+	UpdateFIFO();
+	Wait4CoProFIFOEmpty();	
+	//Hold the touch engine in reset(write REG_CPURESET = 2)
+	wr8(REG_CPU_RESET + RAM_REG, 2);
+	//Set GPIO3 output LOW		
+	wr8(REG_GPIOX_DIR + RAM_REG, (rd8(RAM_REG + REG_GPIOX_DIR) | 0x08)); // Set Disp GPIO Direction 
+	wr8(REG_GPIOX + RAM_REG, (rd8(RAM_REG + REG_GPIOX) | 0xF7));         // Clear GPIO
+	//Wait more than 100us
+	HAL_Delay(1);
+	//Write REG_CPURESET=0
+	wr8(REG_CPU_RESET + RAM_REG, 0);
+	//Wait more than 55ms
+	HAL_Delay(100);
+	//Set GPIO3 to input (floating)			
+	wr8(REG_GPIOX_DIR + RAM_REG, (rd8(RAM_REG + REG_GPIOX_DIR) & 0xF7));             // Set Disp GPIO Direction 
+																		 //---Goodix911 Configuration from AN336	
 }
 
 // *** Host Command - FT81X Embedded Video Engine Datasheet - 4.1.5 **********************************************
@@ -137,14 +450,14 @@ void HostCommand(uint8_t HCMD)
 {
 //  Log("Inside HostCommand\n");
 
-  SPI_Enable();
+  HAL_SPI_Enable();
   
-/*  SPI_Write(HCMD | 0x40); // In case the manual is making you believe that you just found the bug you were looking for - no. */       
-  SPI_Write(HCMD);        
-  SPI_Write(0x00);          // This second byte is set to 0 but if there is need for fancy, never used setups, then rewrite.  
-  SPI_Write(0x00);   
+/*  HAL_SPI_Write(HCMD | 0x40); // In case the manual is making you believe that you just found the bug you were looking for - no. */       
+  HAL_SPI_Write(HCMD);        
+  HAL_SPI_Write(0x00);          // This second byte is set to 0 but if there is need for fancy, never used setups, then rewrite.  
+  HAL_SPI_Write(0x00);   
   
-  SPI_Disable();
+  HAL_SPI_Disable();
 }
 
 // *** Eve API Reference Definitions *****************************************************************************
@@ -153,45 +466,45 @@ void HostCommand(uint8_t HCMD)
 // ***************************************************************************************************************
 void wr32(uint32_t address, uint32_t parameter)
 {
-  SPI_Enable();
+  HAL_SPI_Enable();
   
-  SPI_Write((uint8_t)((address >> 16) | 0x80));   // RAM_REG = 0x302000 and high bit is set - result always 0xB0
-  SPI_Write((uint8_t)(address >> 8));             // Next byte of the register address   
-  SPI_Write((uint8_t)address);                    // Low byte of register address - usually just the 1 byte offset
+  HAL_SPI_Write((uint8_t)((address >> 16) | 0x80));   // RAM_REG = 0x302000 and high bit is set - result always 0xB0
+  HAL_SPI_Write((uint8_t)(address >> 8));             // Next byte of the register address   
+  HAL_SPI_Write((uint8_t)address);                    // Low byte of register address - usually just the 1 byte offset
   
-  SPI_Write((uint8_t)(parameter & 0xff));         // Little endian (yes, it is most significant bit first and least significant byte first)
-  SPI_Write((uint8_t)((parameter >> 8) & 0xff));
-  SPI_Write((uint8_t)((parameter >> 16) & 0xff));
-  SPI_Write((uint8_t)((parameter >> 24) & 0xff));
+  HAL_SPI_Write((uint8_t)(parameter & 0xff));         // Little endian (yes, it is most significant bit first and least significant byte first)
+  HAL_SPI_Write((uint8_t)((parameter >> 8) & 0xff));
+  HAL_SPI_Write((uint8_t)((parameter >> 16) & 0xff));
+  HAL_SPI_Write((uint8_t)((parameter >> 24) & 0xff));
   
-  SPI_Disable();
+  HAL_SPI_Disable();
 }
 
 void wr16(uint32_t address, uint16_t parameter)
 {
-  SPI_Enable();
+  HAL_SPI_Enable();
   
-  SPI_Write((uint8_t)((address >> 16) | 0x80)); // RAM_REG = 0x302000 and high bit is set - result always 0xB0
-  SPI_Write((uint8_t)(address >> 8));           // Next byte of the register address   
-  SPI_Write((uint8_t)address);                  // Low byte of register address - usually just the 1 byte offset
+  HAL_SPI_Write((uint8_t)((address >> 16) | 0x80)); // RAM_REG = 0x302000 and high bit is set - result always 0xB0
+  HAL_SPI_Write((uint8_t)(address >> 8));           // Next byte of the register address   
+  HAL_SPI_Write((uint8_t)address);                  // Low byte of register address - usually just the 1 byte offset
   
-  SPI_Write((uint8_t)(parameter & 0xff));       // Little endian (yes, it is most significant bit first and least significant byte first)
-  SPI_Write((uint8_t)(parameter >> 8) & 0xff);
+  HAL_SPI_Write((uint8_t)(parameter & 0xff));       // Little endian (yes, it is most significant bit first and least significant byte first)
+  HAL_SPI_Write((uint8_t)(parameter >> 8));
   
-  SPI_Disable();
+  HAL_SPI_Disable();
 }
 
 void wr8(uint32_t address, uint8_t parameter)
 {
-  SPI_Enable();
+  HAL_SPI_Enable();
   
-  SPI_Write((uint8_t)((address >> 16) | 0x80)); // RAM_REG = 0x302000 and high bit is set - result always 0xB0
-  SPI_Write((uint8_t)(address >> 8));           // Next byte of the register address   
-  SPI_Write((uint8_t)(address));                // Low byte of register address - usually just the 1 byte offset
+  HAL_SPI_Write((uint8_t)((address >> 16) | 0x80)); // RAM_REG = 0x302000 and high bit is set - result always 0xB0
+  HAL_SPI_Write((uint8_t)(address >> 8));           // Next byte of the register address   
+  HAL_SPI_Write((uint8_t)(address));                // Low byte of register address - usually just the 1 byte offset
   
-  SPI_Write(parameter);             
+  HAL_SPI_Write(parameter);             
   
-  SPI_Disable();
+  HAL_SPI_Disable();
 }
 
 uint32_t rd32(uint32_t address)
@@ -199,15 +512,15 @@ uint32_t rd32(uint32_t address)
   uint8_t buf[4];
   uint32_t Data32;
   
-  SPI_Enable();
+  HAL_SPI_Enable();
   
-  SPI_Write((address >> 16) & 0x3F);    
-  SPI_Write((address >> 8) & 0xff);    
-  SPI_Write(address & 0xff);
+  HAL_SPI_Write((address >> 16) & 0x3F);    
+  HAL_SPI_Write((address >> 8) & 0xff);    
+  HAL_SPI_Write(address & 0xff);
   
-  SPI_ReadBuffer(buf, 4);
+  HAL_SPI_ReadBuffer(buf, 4);
   
-  SPI_Disable();
+  HAL_SPI_Disable();
   
   Data32 = buf[0] + ((uint32_t)buf[1] << 8) + ((uint32_t)buf[2] << 16) + ((uint32_t)buf[3] << 24);
   return (Data32);  
@@ -215,17 +528,17 @@ uint32_t rd32(uint32_t address)
 
 uint16_t rd16(uint32_t address)
 {
-  uint8_t buf[2];
+	uint8_t buf[2] = { 0,0 };
     
-  SPI_Enable();
+  HAL_SPI_Enable();
   
-  SPI_Write((address >> 16) & 0x3F);    
-  SPI_Write((address >> 8) & 0xff);    
-  SPI_Write(address & 0xff);
+  HAL_SPI_Write((address >> 16) & 0x3F);    
+  HAL_SPI_Write((address >> 8) & 0xff);    
+  HAL_SPI_Write(address & 0xff);
   
-  SPI_ReadBuffer(buf, 2);
+  HAL_SPI_ReadBuffer(buf, 2);
   
-  SPI_Disable();
+  HAL_SPI_Disable();
   
   uint16_t Data16 = buf[0] + ((uint16_t)buf[1] << 8);
   return (Data16);  
@@ -235,15 +548,15 @@ uint8_t rd8(uint32_t address)
 {
   uint8_t buf[1];
   
-  SPI_Enable();
+  HAL_SPI_Enable();
   
-  SPI_Write((address >> 16) & 0x3F);    
-  SPI_Write((address >> 8) & 0xff);    
-  SPI_Write(address & 0xff);
+  HAL_SPI_Write((address >> 16) & 0x3F);    
+  HAL_SPI_Write((address >> 8) & 0xff);    
+  HAL_SPI_Write(address & 0xff);
   
-  SPI_ReadBuffer(buf, 1);
+  HAL_SPI_ReadBuffer(buf, 1);
   
-  SPI_Disable();
+  HAL_SPI_Disable();
   
   return (buf[0]);  
 }
@@ -272,12 +585,12 @@ uint8_t Cmd_READ_REG_ID(void)
 {
   uint8_t readData[2];
   
-  SPI_Enable();
-  SPI_Write(0x30);                   // Base address RAM_REG = 0x302000
-  SPI_Write(0x20);    
-  SPI_Write(REG_ID);                 // REG_ID offset = 0x00
-  SPI_ReadBuffer(readData, 1);       // There was a dummy read of the first byte in there
-  SPI_Disable();
+  HAL_SPI_Enable();
+  HAL_SPI_Write(0x30);                   // Base address RAM_REG = 0x302000
+  HAL_SPI_Write(0x20);    
+  HAL_SPI_Write(REG_ID);                 // REG_ID offset = 0x00
+  HAL_SPI_ReadBuffer(readData, 1);       // There was a dummy read of the first byte in there
+  HAL_SPI_Disable();
   
   if (readData[0] == 0x7C)           // FT81x Datasheet section 5.1, Table 5-2. Return value always 0x7C
   {
@@ -368,26 +681,12 @@ void Cmd_Gradient(uint16_t x0, uint16_t y0, uint32_t rgb0, uint16_t x1, uint16_t
   Send_CMD(rgb1);
 }
 
-void Cmd_AnimDraw(int8_t AnimID)
-{
-  Send_CMD(CMD_ANIMDRAW);
-  Send_CMD( (int32_t)AnimID );
-}
-
-void Cmd_AnimDrawFrame(uint32_t addr, uint16_t Xpos, uint16_t Ypos, uint8_t Frame)
-{
-  Send_CMD(CMD_ANIMFRAME);
-  Send_CMD(((uint32_t)Ypos << 16) + Xpos);
-  Send_CMD(addr);
-  Send_CMD( (uint32_t)Frame );
-}
-
 // *** Draw Button - FT81x Series Programmers Guide Section 5.28 **************************************************
 void Cmd_Button(uint16_t x, uint16_t y, uint16_t w, uint16_t h, uint16_t font, uint16_t options, const char* str)
 { 
   uint16_t DataPtr, LoopCount, StrPtr;
   
-  uint16_t length = strlen(str);
+  uint16_t length = (uint16_t)strlen(str);
   if(!length) 
     return;
   
@@ -405,8 +704,10 @@ void Cmd_Button(uint16_t x, uint16_t y, uint16_t w, uint16_t h, uint16_t font, u
   Send_CMD( ((uint32_t)h << 16) | w );
   Send_CMD( ((uint32_t)options << 16) | font );
   
-  for(LoopCount=0; LoopCount <= length/4; LoopCount++)
-    Send_CMD(data[LoopCount]);
+  for (LoopCount = 0; LoopCount <= length / 4; LoopCount++)
+  {
+	  Send_CMD(data[LoopCount]);
+  }
 
   free(data);
 }
@@ -416,7 +717,7 @@ void Cmd_Text(uint16_t x, uint16_t y, uint16_t font, uint16_t options, const cha
 {
   uint16_t DataPtr, LoopCount, StrPtr;
   
-  uint16_t length = strlen(str);
+  uint16_t length = (uint16_t) strlen(str);
   if(!length) 
     return; 
   
@@ -519,62 +820,10 @@ void Cmd_Scale(uint32_t sx, uint32_t sy)
   Send_CMD(sy);
 }
 
-bool FlashAttach( void )
-{
-  Send_CMD( CMD_FLASHATTACH );
-  UpdateFIFO();                                                        // Trigger the CoProcessor to start processing commands out of the FIFO
-  Wait4CoProFIFOEmpty();                                               // wait here until the coprocessor has read and executed every pending command.
-
-  uint8_t FlashStatus = rd8( REG_FLASH_STATUS + RAM_REG );
-  if (FlashStatus != FLASH_STATUS_BASIC)
-  {
-    Log( "FlashAttach: NOT attached\n" );
-    return false;
-  }
-  Log( "FlashAttach: Attached\n" );
-  return true;
-}
-
-bool FlashDetach( void )
-{
-  Send_CMD( CMD_FLASHDETACH );
-  UpdateFIFO();                                                        // Trigger the CoProcessor to start processing commands out of the FIFO
-  Wait4CoProFIFOEmpty();                                               // wait here until the coprocessor has read and executed every pending command.
-
-  uint8_t FlashStatus = rd8( REG_FLASH_STATUS + RAM_REG );
-  if (FlashStatus != FLASH_STATUS_DETACHED)
-  {
-    Log( "FlashDetach: NOT detached\n" );
-    return false;
-  }
-  Log( "FlashDetach: Detached\n" );
-  return true;
-}
-
-bool FlashFast( void )
+void Cmd_Flash_Fast(void)
 {
   Send_CMD(CMD_FLASHFAST);
   Send_CMD(0);
-  UpdateFIFO();                                                        // Trigger the CoProcessor to start processing commands out of the FIFO
-  Wait4CoProFIFOEmpty();                                               // wait here until the coprocessor has read and executed every pending command.
-  
-  uint8_t FlashStatus = rd8( REG_FLASH_STATUS + RAM_REG );
-  if (FlashStatus != FLASH_STATUS_FULL)
-  {
-    Log( "FlashFast: NOT full mode\n" );
-    return false;
-  }
-  Log( "FlashFast: Full speed ahead\n" );
-  return true;
-}
-
-bool FlashErase( void )
-{
-  Log( "FlashErase: Erasing Flash\n" );
-  Send_CMD( CMD_FLASHERASE );
-  UpdateFIFO();                                                        // Trigger the CoProcessor to start processing commands out of the FIFO
-  Wait4CoProFIFOEmpty();                                               // wait here until the coprocessor has read and executed every pending command.
-  Log( "FlashErase: Finished Erase\n" );
 }
 
 // *** Calibrate Touch Digitizer - FT81x Series Programmers Guide Section 5.52 ***********************************
@@ -595,23 +844,23 @@ void Calibrate_Manual(uint16_t Width, uint16_t Height, uint16_t V_Offset, uint16
   int32_t tmp, k;
   int32_t TransMatrix[6];
   uint8_t count = 0;
+  uint8_t pressed = 0;
   char num[2];
-  uint8_t touch_lock = 1;
 
   // These values determine where your calibration points will be drawn on your display
-  displayX[0] = (Width * 0.15) + H_Offset;
-  displayY[0] = (Height * 0.15) + V_Offset;
+  displayX[0] = (uint32_t) (Width * 0.15) + H_Offset;
+  displayY[0] = (uint32_t) (Height * 0.15) + V_Offset;
   
-  displayX[1] = (Width * 0.85) + H_Offset;
-  displayY[1] = (Height / 2) + V_Offset;
+  displayX[1] = (uint32_t) (Width * 0.85) + H_Offset;
+  displayY[1] = (uint32_t) (Height / 2) + V_Offset;
   
-  displayX[2] = (Width / 2) + H_Offset;
-  displayY[2] = (Height * 0.85) + V_Offset;
+  displayX[2] = (uint32_t) (Width / 2) + H_Offset;
+  displayY[2] = (uint32_t) (Height * 0.85) + V_Offset;
 
   while (count < 3) 
   {
     Send_CMD(CMD_DLSTART);
-    Send_CMD(CLEAR_COLOR_RGB(64, 64, 64));
+    Send_CMD(CLEAR_COLOR_RGB(0, 0, 0));	
     Send_CMD(CLEAR(1,1,1));
 
     // Draw Calibration Point on screen
@@ -630,51 +879,45 @@ void Calibrate_Manual(uint16_t Width, uint16_t Height, uint16_t V_Offset, uint16
     Send_CMD(CMD_SWAP);
     UpdateFIFO();                                                                 // Trigger the CoProcessor to start processing commands out of the FIFO
     Wait4CoProFIFOEmpty();                                                        // wait here until the coprocessor has read and executed every pending command.
+    HAL_Delay(300);
 
-    while(1)
-    {
-      touchValue = rd32(REG_TOUCH_DIRECT_XY + RAM_REG); 	// Read for any new touch tag inputs
-			
-      if(touch_lock)
-      {
-        if(touchValue & 0x80000000) // check if we have no touch
-          {
-            touch_lock = 0;
-          }
-      }
-      else
-      {
-        if (!(touchValue & 0x80000000)) // check if a touch is detected
-          {
-            touchX[count] = (touchValue>>16) & 0x03FF;	// Raw Touchscreen Y coordinate
-            touchY[count] = touchValue & 0x03FF;		// Raw Touchscreen Y coordinate
-            touch_lock = 1;
-            count++;
-            break; // leave while(1)
-          }
-      }
-    }
+	while (pressed == count)
+	{
+		touchValue = rd32(REG_TOUCH_DIRECT_XY + RAM_REG);                             // Read for any new touch tag inputs
+		if (!(touchValue & 0x80000000))
+		{
+			touchX[count] = (touchValue >> 16) & 0x03FF;                                  // Raw Touchscreen Y coordinate
+			touchY[count] = touchValue & 0x03FF;                                        // Raw Touchscreen Y coordinate
+
+																						//Log("\ndisplay x[%d]: %ld display y[%d]: %ld\n", count, displayX[count], count, displayY[count]);
+																						//Log("touch x[%d]: %ld touch y[%d]: %ld\n", count, touchX[count], count, touchY[count]);
+
+			count++;
+		}
+	}
+	pressed = count;
+
   }
 
-  k = ((touchX[0] - touchX[2]) * (touchY[1] - touchY[2])) - ((touchX[1] - touchX[2]) * (touchY[0] - touchY[2])); 
-  
-  tmp = (((displayX[0] - displayX[2]) * (touchY[1] - touchY[2])) - ((displayX[1] - displayX[2])*(touchY[0] - touchY[2])));
-  TransMatrix[0] = CalcCoef(tmp, k);
+  k = ((touchX[0] - touchX[2])*(touchY[1] - touchY[2])) - ((touchX[1] - touchX[2])*(touchY[0] - touchY[2]));
 
-  tmp = (((touchX[0] - touchX[2]) * (displayX[1] - displayX[2])) - ((displayX[0] - displayX[2])*(touchX[1] - touchX[2])));  
-  TransMatrix[1] = CalcCoef(tmp, k);
-  
-  tmp = ((touchY[0] * (((touchX[2] * displayX[1]) - (touchX[1] * displayX[2])))) + (touchY[1] * (((touchX[0] * displayX[2]) - (touchX[2] * displayX[0])))) + (touchY[2] * (((touchX[1] * displayX[0]) - (touchX[0] * displayX[1])))));    
-  TransMatrix[2] = CalcCoef(tmp, k);
-    
-  tmp = (((displayY[0] - displayY[2]) * (touchY[1] - touchY[2])) - ((displayY[1] - displayY[2])*(touchY[0] - touchY[2])));  
-  TransMatrix[3] = CalcCoef(tmp, k);
-    
-  tmp = (((touchX[0] - touchX[2]) * (displayY[1] - displayY[2])) - ((displayY[0] - displayY[2])*(touchX[1] - touchX[2])));  
-  TransMatrix[4] = CalcCoef(tmp, k);
-    
-  tmp = ((touchY[0] * (((touchX[2] * displayY[1]) - (touchX[1] * displayY[2])))) + (touchY[1] * (((touchX[0] * displayY[2]) - (touchX[2] * displayY[0])))) + (touchY[2] * (((touchX[1] * displayY[0]) - (touchX[0] * displayY[1])))));  
-  TransMatrix[5] = CalcCoef(tmp, k);
+  tmp = (((displayX[0] - displayX[2]) * (touchY[1] - touchY[2])) - ((displayX[1] - displayX[2])*(touchY[0] - touchY[2])));
+  TransMatrix[0] = ((int64_t)tmp << 16) / k;
+
+  tmp = (((touchX[0] - touchX[2]) * (displayX[1] - displayX[2])) - ((displayX[0] - displayX[2])*(touchX[1] - touchX[2])));
+  TransMatrix[1] = ((int64_t)tmp << 16) / k;
+
+  tmp = ((touchY[0] * (((touchX[2] * displayX[1]) - (touchX[1] * displayX[2])))) + (touchY[1] * (((touchX[0] * displayX[2]) - (touchX[2] * displayX[0])))) + (touchY[2] * (((touchX[1] * displayX[0]) - (touchX[0] * displayX[1])))));
+  TransMatrix[2] = ((int64_t)tmp << 16) / k;
+
+  tmp = (((displayY[0] - displayY[2]) * (touchY[1] - touchY[2])) - ((displayY[1] - displayY[2])*(touchY[0] - touchY[2])));
+  TransMatrix[3] = ((int64_t)tmp << 16) / k;
+
+  tmp = (((touchX[0] - touchX[2]) * (displayY[1] - displayY[2])) - ((displayY[0] - displayY[2])*(touchX[1] - touchX[2])));
+  TransMatrix[4] = ((int64_t)tmp << 16) / k;
+
+  tmp = ((touchY[0] * (((touchX[2] * displayY[1]) - (touchX[1] * displayY[2])))) + (touchY[1] * (((touchX[0] * displayY[2]) - (touchX[2] * displayY[0])))) + (touchY[2] * (((touchX[1] * displayY[0]) - (touchX[0] * displayY[1])))));
+  TransMatrix[5] = ((int64_t)tmp << 16) / k;
   
   count = 0;
   do
@@ -687,6 +930,44 @@ void Calibrate_Manual(uint16_t Width, uint16_t Height, uint16_t V_Offset, uint16
     
     count++;
   }while(count < 6);
+}
+// ***************************************************************************************************************
+// *** Animation functions ***************************************************************************************
+// ***************************************************************************************************************
+
+void Cmd_AnimStart(int32_t ch, uint32_t aoptr, uint32_t loop)
+{
+	Send_CMD(CMD_ANIMSTART);
+	Send_CMD(ch);
+	Send_CMD(aoptr);
+	Send_CMD(loop);
+}
+
+void Cmd_AnimStop(int32_t ch)
+{
+	Send_CMD(CMD_ANIMSTOP);
+	Send_CMD(ch);
+}
+
+void Cmd_AnimXY(int32_t ch, int16_t x, int16_t y)
+{
+	Send_CMD(CMD_ANIMXY);
+	Send_CMD(ch);
+	Send_CMD(((uint32_t)y << 16) | x);
+}
+
+void Cmd_AnimDraw(int32_t ch)
+{
+	Send_CMD(CMD_ANIMDRAW);
+	Send_CMD(ch);
+}
+
+void Cmd_AnimDrawFrame(int16_t x, int16_t y, uint32_t aoptr, uint32_t frame)
+{
+	Send_CMD(CMD_ANIMFRAME);
+	Send_CMD(((uint32_t)y << 16) | x);
+	Send_CMD(aoptr);
+	Send_CMD(frame);
 }
 
 // ***************************************************************************************************************
@@ -718,22 +999,18 @@ void Wait4CoProFIFO(uint32_t room)
 
 // Sit and wait until the CoPro FIFO is empty
 // Detect operational errors and print the error and stop.
-bool Wait4CoProFIFOEmpty(void)
+void Wait4CoProFIFOEmpty(void)
 {
   uint16_t ReadReg;
-  uint16_t WriteReg;
   uint8_t ErrChar;
   uint8_t buffy[2];
-  uint8_t LoopCount = 0;
-
-  WriteReg = rd16(REG_CMD_WRITE + RAM_REG);
   do
   {
     ReadReg = rd16(REG_CMD_READ + RAM_REG);
-
     if(ReadReg == 0xFFF)
     {
-      Log("\nW4CPFE: ");
+      // this is a error which would require sophistication to fix and continue but we fake it somewhat unsuccessfully
+      Log("\n");
       uint8_t Offset = 0;
       do
       {
@@ -746,45 +1023,31 @@ bool Wait4CoProFIFOEmpty(void)
       Log("\n");
 
       // Eve is unhappy - needs a paddling.
-      uint16_t Patch_Add = rd16( REG_COPRO_PATCH_PTR + RAM_REG );
-      wr32( REG_CPU_RESET + RAM_REG, 1 );
-      wr32( REG_CMD_READ + RAM_REG, 0 );
-      wr32( REG_CMD_WRITE + RAM_REG, 0 );
-      wr32( REG_CMD_DL + RAM_REG, 0 );
-      wr32( REG_PCLK + RAM_REG, 0 );
-      WriteReg = FifoWriteLocation = 0;                     // reset our marker tracker variables
-      wr32( REG_CPU_RESET + RAM_REG, 0 );
-      MyDelay( 100 );
-      wr16( REG_COPRO_PATCH_PTR + RAM_REG, Patch_Add );
-
-      // If this is a BT81x and you were previously in fast flash mode, you will not be any more 
-      //  - probably need to track the state and redo fast mode here.
+      uint32_t Patch_Add = rd32(REG_COPRO_PATCH_PTR + RAM_REG);
+      wr8(REG_CPU_RESET + RAM_REG, 1);
+      wr8(REG_CMD_READ + RAM_REG, 0);
+      wr8(REG_CMD_WRITE + RAM_REG, 0);
+      wr8(REG_CMD_DL + RAM_REG, 0);
+      wr8(REG_CPU_RESET + RAM_REG, 0);
+      wr32(REG_COPRO_PATCH_PTR + RAM_REG, Patch_Add);
+      HAL_Delay(250);  // we already saw one error message and we don't need to see then 1000 times a second
     }
-
-    if (LoopCount++ == 100) // 100 times around is waaay too much
-    {
-      Log("Eve stuck - W:%lu R:%lu\n", WriteReg, ReadReg);
-      return false;
-    }
-    MyDelay(2);            // normalize operation for processor speed
-  }while( ReadReg != WriteReg );
-
-  return true;
+  }while( ReadReg != rd16(REG_CMD_WRITE + RAM_REG) );
 }
 
 // Every CoPro transaction starts with enabling the SPI and sending an address
 void StartCoProTransfer(uint32_t address, uint8_t reading)
 {
-  SPI_Enable();
+  HAL_SPI_Enable();
   if (reading){
-    SPI_Write(address >> 16);
-    SPI_Write(address >> 8);
-    SPI_Write(address);
-    SPI_Write(0);
+    HAL_SPI_Write(address >> 16);
+    HAL_SPI_Write(address >> 8);
+    HAL_SPI_Write(address);
+    HAL_SPI_Write(0);
   }else{
-    SPI_Write((address >> 16) | 0x80); 
-    SPI_Write(address >> 8);           
-    SPI_Write(address);                
+    HAL_SPI_Write((address >> 16) | 0x80); 
+    HAL_SPI_Write(address >> 8);           
+    HAL_SPI_Write(address);                
   }
 }
 
@@ -820,11 +1083,11 @@ void CoProWrCmdBuf(const uint8_t *buff, uint32_t count)
     
     StartCoProTransfer(FifoWriteLocation + RAM_CMD, false);// Base address of the Command Buffer plus our offset into it - Start SPI transaction
     
-    SPI_WriteBuffer((uint8_t*)buff, TransferSize);         // write the little bit for which we found space
+    HAL_SPI_WriteBuffer((uint8_t*)buff, TransferSize);         // write the little bit for which we found space
     buff += TransferSize;                                  // move the working data read pointer to the next fresh data
 
     FifoWriteLocation  = (FifoWriteLocation + TransferSize) % FT_CMD_FIFO_SIZE;  
-    SPI_Disable();                                         // End SPI transaction with the FIFO
+    HAL_SPI_Disable();                                         // End SPI transaction with the FIFO
     
     wr16(REG_CMD_WRITE + RAM_REG, FifoWriteLocation);      // Manually update the write position pointer to initiate processing of the FIFO
     Remaining -= TransferSize;                             // reduce what we want by what we sent
@@ -834,33 +1097,16 @@ void CoProWrCmdBuf(const uint8_t *buff, uint32_t count)
 
 // Write a block of data into Eve RAM space a byte at a time.
 // Return the last written address + 1 (The next available RAM address)
-uint32_t WriteBlockRAM( uint32_t Add, const uint8_t *buff, uint32_t count )
+uint32_t WriteBlockRAM(uint32_t Add, const uint8_t *buff, uint32_t count)
 {
-  uint16_t index;
+  uint32_t index;
   uint32_t WriteAddress = Add;  // I want to return the value instead of modifying the variable in place
-
+  
   for (index = 0; index < count; index++)
   {
-    wr8( WriteAddress++, buff[index] );
+    wr8(WriteAddress++, buff[index]);
   }
   return (WriteAddress);
-}
-
-// LoadFile() ( 5.76 - CMD_FLASHREAD )
-// dest - Destination address in RAM_G.  Must be 4-byte aligned.
-// src - Source address in flash memory.  Must be 64-byte aligned.
-// num - Number of bytes to write.  Must be multiple of 4
-void LoadFile( uint32_t src, uint32_t dest, uint32_t num )
-{
-  Send_CMD( CMD_FLASHREAD );
-  Send_CMD( dest );                                                  // Address we are writing to
-  Send_CMD( src );                                                   // Address we are reading from
-  Send_CMD( num );                                                   // number of bytes to transfer
-  UpdateFIFO();                                                      // Trigger the CoProcessor to start processing commands out of the FIFO
-  Wait4CoProFIFOEmpty();                                             // wait here until the co-processor has read and executed every pending command.
-  MyDelay( 50 );  // YES OR NOT????????????????????????????????????????????????????????????
-
-  Log( "LoadFile: File Copied %ld to %ld from %ld\n", num, dest, src & 0x7FFFFF );
 }
 
 // CalcCoef - Support function for manual screen calibration function
@@ -892,3 +1138,75 @@ int32_t CalcCoef(int32_t Q, int32_t K)
       
   return (returnValue);
 }
+
+bool FlashAttach(void)
+{
+	Send_CMD(CMD_FLASHATTACH);
+	UpdateFIFO();                                                       // Trigger the CoProcessor to start processing commands out of the FIFO
+	Wait4CoProFIFOEmpty();                                              // wait here until the coprocessor has read and executed every pending command.
+
+	uint8_t FlashStatus = rd8(REG_FLASH_STATUS + RAM_REG);
+	if (FlashStatus != FLASH_STATUS_BASIC)
+	{
+		return false;
+	}
+	return true;
+}
+
+bool FlashDetach(void)
+{
+	Send_CMD(CMD_FLASHDETACH);
+	UpdateFIFO();                                                       // Trigger the CoProcessor to start processing commands out of the FIFO
+	Wait4CoProFIFOEmpty();                                              // wait here until the coprocessor has read and executed every pending command.
+
+	uint8_t FlashStatus = rd8(REG_FLASH_STATUS + RAM_REG);
+	if (FlashStatus != FLASH_STATUS_DETACHED)
+	{
+		return false;
+	}
+	return true;
+}
+
+bool FlashFast(void)
+{
+	Cmd_Flash_Fast();
+	UpdateFIFO();                                                       // Trigger the CoProcessor to start processing commands out of the FIFO
+	Wait4CoProFIFOEmpty();                                              // wait here until the coprocessor has read and executed every pending command.
+
+	uint8_t FlashStatus = rd8(REG_FLASH_STATUS + RAM_REG);
+	if (FlashStatus != FLASH_STATUS_FULL)
+	{
+		return false;
+	}
+	return true;
+}
+
+bool FlashErase(void)
+{
+	Send_CMD(CMD_FLASHERASE);
+	UpdateFIFO();                                                       // Trigger the CoProcessor to start processing commands out of the FIFO
+	Wait4CoProFIFOEmpty();                                              // wait here until the coprocessor has read and executed every pending command.
+	return true;
+}
+
+#if defined(EVE_MO_INTERNAL_BUILD) 
+  void EVE_SPI_Enable(void)
+  {
+    HAL_SPI_Enable();
+  }
+
+  void EVE_SPI_Disable(void)
+  {
+    HAL_SPI_Disable();
+  }
+
+  uint8_t EVE_SPI_Write(uint8_t data) 
+  {
+    return HAL_SPI_Write(data);
+  }
+
+  void EVE_SPI_WriteBuffer(uint8_t *Buffer, uint32_t Length)
+  {
+    HAL_SPI_WriteBuffer(Buffer, Length);
+  }
+#endif  

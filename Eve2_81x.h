@@ -1,5 +1,13 @@
 #ifndef __EVE81X_H
 #define __EVE81X_H
+
+/* For interal builds a dll version of this code is supported */
+#if defined(EVE_MO_INTERNAL_BUILD) 
+#  include "eve_export.h"
+#else
+#  define EVE_EXPORT 
+#endif 
+
 #include <stdint.h>
 #include <stdlib.h>
 #include <stdio.h>
@@ -7,41 +15,20 @@
 #include <stdbool.h>
 // =====================================================================================
 // Required Functions - Hardware driver or otherwise environment specific. Abstracted  |
-// and found in ArduinoAL.h or whatever the abstraction layer is called in your world. |
+// and found in hw_api.h.                                                              |
 // This library requires base support functions for SPI, delays, and hardware pin      |
 // control.                                                                            |
-// =====================================================================================
-//
-// Delays
-// void MyDelay(uint32_t DLY);
-//
-// Pin control
-// void SetPin(uint8_t, Boolean);
-// void Eve_Reset_HW(void);
-//
-// SPI functions
-// void SPI_Enable(void);
-// void SPI_Disable(void);
-// void SPI_Write(uint8_t data);
-// void SPI_WriteByte(uint8_t data);
-// void SPI_WriteBuffer(uint8_t *Buffer, uint32_t Length);
-// void SPI_ReadBuffer(uint8_t *Buffer, uint32_t Length);
-//
-// #define WorkBuffSz 64 
-//
 // =====================================================================================
 
 // Just in case this is for Arduino - Eve wants a DISPLAY() macro and Arduino already defines DISPLAY 
 // for something else that we will not be using, so we can kill the Arduino define.
-#undef DISPLAY    
+#if defined(DISPLAY)
+#  undef DISPLAY    
+#endif
 
-// Once again, if this is being used for Arduino, it wants C++, but C is totally cool as long as it is
-// wrapped in this extern declaration (also see the bottom of the file for the close bracket)           
 #ifdef __cplusplus
 extern "C" {
 #endif
-
-//#include <stdint.h>              // Find integer types like "uint8_t"  
 
 #define HCMD_ACTIVE      0x00
 #define HCMD_STANDBY     0x41
@@ -366,10 +353,12 @@ extern "C" {
 #define COLOR_RGB(red,green,blue)       ((4UL<<24)|(((red)&255UL)<<16)|(((green)&255UL)<<8)|(((blue)&255UL)<<0))                                                               // COLOR_RGB - FT-PG Section 4.28
 #define VERTEX2II(x,y,handle,cell) ((2UL<<30)|(((x)&511UL)<<21)|(((y)&511UL)<<12)|(((handle)&31UL)<<7)|(((cell)&127UL)<<0))                                              // VERTEX2II - FT-PG Section 4.48
 #define VERTEX2F(x,y) ((1UL<<30)|(((x)&32767UL)<<15)|(((y)&32767UL)<<0))                                                                                                 // VERTEX2F - FT-PG Section 4.47
+#define VERTEXFORMAT(frac) ((39UL<<24)|(frac))                                                                                                                           // VERTEXFORMAT - FT-PG Section 4.51
 #define CELL(cell) ((6UL<<24)|(((cell)&127UL)<<0))                                                                                                                       // CELL - FT-PG Section 4.20
 #define BITMAP_HANDLE(handle) ((5UL<<24) | (((handle) & 31UL) << 0))                                                                                                     // BITMAP_HANDLE - FT-PG Section 4.06
 #define BITMAP_SOURCE(addr) ((1UL<<24)|(((addr)&1048575UL)<<0))                                                                                                          // BITMAP_SOURCE - FT-PG Section 4.11
 #define BITMAP_LAYOUT(format,linestride,height) ((7UL<<24)|(((format)&31UL)<<19)|(((linestride)&1023UL)<<9)|(((height)&511UL)<<0))                                       // BITMAP_LAYOUT - FT-PG Section 4.07
+#define BITMAP_LAYOUT2(linestride,height) ((28UL<<24)|(((linestride >> 10)&3) << 2) | ((height >>9) & 3))
 #define BITMAP_SIZE(filter,wrapx,wrapy,width,height) ((8UL<<24)|(((filter)&1UL)<<20)|(((wrapx)&1UL)<<19)|(((wrapy)&1UL)<<18)|(((width)&511UL)<<9)|(((height)&511UL)<<0)) // BITMAP_SIZE - FT-PG Section 4.09
 #define TAG(s) ((3UL<<24)|(((s)&255UL)<<0))                                                                                                                              // TAG - FT-PG Section 4.43
 #define POINT_SIZE(sighs) ((13UL<<24)|(((sighs)&8191UL)<<0))                                                                                                             // POINT_SIZE - FT-PG Section 4.36
@@ -385,71 +374,78 @@ extern "C" {
 extern uint16_t FifoWriteLocation;
 
 // Function Prototypes
-void FT81x_Init(int display, int board, int touch);
-void Eve_Reset(void);
-void Cap_Touch_Upload(void);
+int EVE_EXPORT FT81x_Init(int display, int board, int touch);
+void EVE_EXPORT Eve_Reset(void);
+void EVE_EXPORT Cap_Touch_Upload(void);
 
-void HostCommand(uint8_t HostCommand); 
-void wr32(uint32_t address, uint32_t parameter);
-void wr16(uint32_t, uint16_t parameter);
-void wr8(uint32_t, uint8_t parameter);
-uint8_t rd8(uint32_t RegAddr);
-uint16_t rd16(uint32_t RegAddr);
-uint32_t rd32(uint32_t RegAddr);
-void Send_CMD(uint32_t data);
-void UpdateFIFO(void);
-uint8_t Cmd_READ_REG_ID(void);
+void EVE_EXPORT HostCommand(uint8_t HostCommand);
+void EVE_EXPORT wr32(uint32_t address, uint32_t parameter);
+void EVE_EXPORT wr16(uint32_t, uint16_t parameter);
+void EVE_EXPORT wr8(uint32_t, uint8_t parameter);
+uint8_t EVE_EXPORT rd8(uint32_t RegAddr);
+uint16_t EVE_EXPORT rd16(uint32_t RegAddr);
+uint32_t EVE_EXPORT rd32(uint32_t RegAddr);
+void EVE_EXPORT Send_CMD(uint32_t data);
+void EVE_EXPORT UpdateFIFO(void);
+uint8_t EVE_EXPORT Cmd_READ_REG_ID(void);
 
 // Widgets and other significant screen objects
-void Cmd_Slider(uint16_t x, uint16_t y, uint16_t w, uint16_t h, uint16_t options, uint16_t val, uint16_t range);
-void Cmd_Spinner(uint16_t x, uint16_t y, uint16_t style, uint16_t scale);
-void Cmd_Gauge(uint16_t x, uint16_t y, uint16_t r, uint16_t options, uint16_t major, uint16_t minor, uint16_t val, uint16_t range);
-void Cmd_Dial(uint16_t x, uint16_t y, uint16_t r, uint16_t options, uint16_t val);
-void Cmd_Track(uint16_t x, uint16_t y, uint16_t w, uint16_t h, uint16_t tag);
-void Cmd_Number(uint16_t x, uint16_t y, uint16_t font, uint16_t options, uint32_t num);
-void Cmd_Gradient(uint16_t x0, uint16_t y0, uint32_t rgb0, uint16_t x1, uint16_t y1, uint32_t rgb1);
-void Cmd_Button(uint16_t x, uint16_t y, uint16_t w, uint16_t h, uint16_t font, uint16_t options, const char* str);
-void Cmd_Text(uint16_t x, uint16_t y, uint16_t font, uint16_t options, const char* str);
+void EVE_EXPORT Cmd_Slider(uint16_t x, uint16_t y, uint16_t w, uint16_t h, uint16_t options, uint16_t val, uint16_t range);
+void EVE_EXPORT Cmd_Spinner(uint16_t x, uint16_t y, uint16_t style, uint16_t scale);
+void EVE_EXPORT Cmd_Gauge(uint16_t x, uint16_t y, uint16_t r, uint16_t options, uint16_t major, uint16_t minor, uint16_t val, uint16_t range);
+void EVE_EXPORT Cmd_Dial(uint16_t x, uint16_t y, uint16_t r, uint16_t options, uint16_t val);
+void EVE_EXPORT Cmd_Track(uint16_t x, uint16_t y, uint16_t w, uint16_t h, uint16_t tag);
+void EVE_EXPORT Cmd_Number(uint16_t x, uint16_t y, uint16_t font, uint16_t options, uint32_t num);
+void EVE_EXPORT Cmd_Gradient(uint16_t x0, uint16_t y0, uint32_t rgb0, uint16_t x1, uint16_t y1, uint32_t rgb1);
+void EVE_EXPORT Cmd_Button(uint16_t x, uint16_t y, uint16_t w, uint16_t h, uint16_t font, uint16_t options, const char* str);
+void EVE_EXPORT Cmd_Text(uint16_t x, uint16_t y, uint16_t font, uint16_t options, const char* str);
 
-void Cmd_SetBitmap(uint32_t addr, uint16_t fmt, uint16_t width, uint16_t height);
-void Cmd_Memcpy(uint32_t dest, uint32_t src, uint32_t num);
-void Cmd_GetPtr(void);
-void Cmd_GradientColor(uint32_t c);
-void Cmd_FGcolor(uint32_t c);
-void Cmd_BGcolor(uint32_t c);
-void Cmd_Translate(uint32_t tx, uint32_t ty);
-void Cmd_Rotate(uint32_t a);
-void Cmd_SetRotate(uint32_t rotation);
-void Cmd_Scale(uint32_t sx, uint32_t sy);
-void Cmd_Calibrate(uint32_t result);
-void Cmd_Flash_Fast(void);
+void EVE_EXPORT Cmd_SetBitmap(uint32_t addr, uint16_t fmt, uint16_t width, uint16_t height);
+void EVE_EXPORT Cmd_Memcpy(uint32_t dest, uint32_t src, uint32_t num);
+void EVE_EXPORT Cmd_GetPtr(void);
+void EVE_EXPORT Cmd_GradientColor(uint32_t c);
+void EVE_EXPORT Cmd_FGcolor(uint32_t c);
+void EVE_EXPORT Cmd_BGcolor(uint32_t c);
+void EVE_EXPORT Cmd_Translate(uint32_t tx, uint32_t ty);
+void EVE_EXPORT Cmd_Rotate(uint32_t a);
+void EVE_EXPORT Cmd_SetRotate(uint32_t rotation);
+void EVE_EXPORT Cmd_Scale(uint32_t sx, uint32_t sy);
+void EVE_EXPORT Cmd_Calibrate(uint32_t result);
+void EVE_EXPORT Cmd_Flash_Fast(void);
 
-void Cmd_AnimStart(int32_t ch, uint32_t aoptr, uint32_t loop);
-void Cmd_AnimStop(int32_t ch);
-void Cmd_AnimXY(int32_t ch, int16_t x, int16_t y);
-void Cmd_AnimDraw(int32_t ch);
-void Cmd_AnimDrawFrame(int16_t x, int16_t y, uint32_t aoptr, uint32_t frame);
+void EVE_EXPORT Cmd_AnimStart(int32_t ch, uint32_t aoptr, uint32_t loop);
+void EVE_EXPORT Cmd_AnimStop(int32_t ch);
+void EVE_EXPORT Cmd_AnimXY(int32_t ch, int16_t x, int16_t y);
+void EVE_EXPORT Cmd_AnimDraw(int32_t ch);
+void EVE_EXPORT Cmd_AnimDrawFrame(int16_t x, int16_t y, uint32_t aoptr, uint32_t frame);
 
-void Calibrate_Manual(uint16_t Width, uint16_t Height, uint16_t V_Offset, uint16_t H_Offset);
+void EVE_EXPORT Calibrate_Manual(uint16_t Width, uint16_t Height, uint16_t V_Offset, uint16_t H_Offset);
 
-uint16_t CoProFIFO_FreeSpace(void);
-void Wait4CoProFIFO(uint32_t room);
-void Wait4CoProFIFOEmpty(void);
-void StartCoProTransfer(uint32_t address, uint8_t reading);
-void CoProWrCmdBuf(const uint8_t *buffer, uint32_t count);
-uint32_t WriteBlockRAM(uint32_t Add, const uint8_t *buff, uint32_t count);
-int32_t CalcCoef(int32_t Q, int32_t K);
-uint32_t Display_Width();
-uint32_t Display_Height();
-uint8_t Display_Touch();
-uint32_t Display_HOffset();
-uint32_t Display_VOffset();
+uint16_t EVE_EXPORT CoProFIFO_FreeSpace(void);
+void EVE_EXPORT Wait4CoProFIFO(uint32_t room);
+void EVE_EXPORT Wait4CoProFIFOEmpty(void);
+void EVE_EXPORT StartCoProTransfer(uint32_t address, uint8_t reading);
+void EVE_EXPORT CoProWrCmdBuf(const uint8_t *buffer, uint32_t count);
+uint32_t EVE_EXPORT WriteBlockRAM(uint32_t Add, const uint8_t *buff, uint32_t count);
+int32_t EVE_EXPORT CalcCoef(int32_t Q, int32_t K);
+uint32_t EVE_EXPORT Display_Width();
+uint32_t EVE_EXPORT Display_Height();
+uint8_t EVE_EXPORT Display_Touch();
+uint32_t EVE_EXPORT Display_HOffset();
+uint32_t EVE_EXPORT Display_VOffset();
 
 /* Flash commands */
-bool FlashAttach(void);
-bool FlashDetach(void);
-bool FlashFast(void);
-bool FlashErase(void);
+bool EVE_EXPORT FlashAttach(void);
+bool EVE_EXPORT FlashDetach(void);
+bool EVE_EXPORT FlashFast(void);
+bool EVE_EXPORT FlashErase(void);
+
+#if defined(EVE_MO_INTERNAL_BUILD) 
+  void EVE_EXPORT EVE_SPI_Enable(void);
+  void EVE_EXPORT EVE_SPI_Disable(void);
+  uint8_t EVE_EXPORT EVE_SPI_Write(uint8_t data);
+  void EVE_EXPORT EVE_SPI_WriteBuffer(uint8_t *Buffer, uint32_t Length);
+#endif
 
 #ifdef __cplusplus
 }
