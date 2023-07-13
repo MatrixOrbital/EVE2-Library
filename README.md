@@ -1,3 +1,7 @@
+# DEPRICATED
+## This library has been archived, please use the new one here
+## https://github.com/MatrixOrbital/EVE-Library
+
 A C library for a [Matrix Orbital EVE2, EVE3 or EVE4](https://www.matrixorbital.com/ftdi-eve) SPI TFT displays.
 
 ![alt text](https://www.matrixorbital.com/image/cache/catalog/products/EVE/EVE3-43G-300x300.jpg)
