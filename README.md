@@ -1,5 +1,5 @@
 # DEPRICATED
-## This library has been archived, please use the new one here
+## This library has been archived, please use the new one here:
 ## https://github.com/MatrixOrbital/EVE-Library
 
 
